@@ -20,6 +20,16 @@
       </header>
 
       <section class="screen active" id="todayScreen" aria-label="今天">
+        <section class="intro-card">
+          <span>測試版</span>
+          <h2>家人分工、問狀態、留訊息，不用一直翻 LINE。</h2>
+          <div class="starter-actions">
+            <button type="button" data-start-action="task">新增任務</button>
+            <button type="button" data-start-action="checkin">問狀態</button>
+            <button type="button" data-screen-link="chat">家庭聊天</button>
+          </div>
+        </section>
+
         <section class="block checkin-card" id="pendingCheckinCard">
           <div class="block-title">
             <h2 id="checkinQuestionTitle">狀態詢問</h2>
@@ -179,6 +189,7 @@
           </div>
           <div class="admin-actions">
             <button id="resetDemoButton" type="button">重設示範資料</button>
+            <button id="clearDemoButton" type="button">移除所有範例</button>
             <button id="addDemoTaskButton" type="button">新增隨機任務</button>
           </div>
         </section>

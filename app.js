@@ -10,33 +10,22 @@ const initialState = {
   addMode: "task",
   selectedQuestion: "今天狀況如何？",
   selectedStatus: "😄",
-  pendingCheckin: {
-    from: "爸爸",
-    target: "Sam",
-    question: "今天狀況如何？",
-  },
+  pendingCheckin: null,
   members: [
     { name: "Sam", short: "你", tone: "tone-gold", health: "😄", note: "今天值班" },
-    { name: "爸爸", short: "爸", tone: "tone-red", health: "😐", note: "09:18 已確認" },
-    { name: "姐姐", short: "姐", tone: "tone-teal", health: "😄", note: "負責晚餐與藥盒" },
-    { name: "媽媽", short: "媽", tone: "tone-blue", health: "😴", note: "晚上回報" },
-    { name: "哥哥", short: "哥", tone: "tone-teal", health: "😐", note: "尚未確認" },
+    { name: "爸爸", short: "爸", tone: "tone-red", health: "😐", note: "還沒回報" },
+    { name: "姐姐", short: "姐", tone: "tone-teal", health: "😄", note: "已加入家庭" },
+    { name: "媽媽", short: "媽", tone: "tone-blue", health: "😐", note: "已加入家庭" },
   ],
   tasks: [
-    { id: 1, title: "買菜", owner: "姐姐", time: "今天", author: "Sam", done: false },
-    { id: 2, title: "回家", owner: "Sam", time: "今天", author: "Sam", done: false },
-    { id: 3, title: "晚餐後量血壓", owner: "爸爸", time: "今天", author: "姐姐", done: false },
-    { id: 4, title: "確認媽媽新藥", owner: "哥哥", time: "今天", author: "爸爸", done: false },
+    { id: 1, title: "買牛奶", owner: "姐姐", time: "今天", author: "Sam", done: false },
+    { id: 2, title: "倒垃圾", owner: "Sam", time: "今天", author: "Sam", done: false },
   ],
   feed: [
-    { id: 1, actor: "Sam", icon: "你", tone: "tone-gold", text: "回報狀態 😄 OK", type: "normal" },
-    { id: 2, actor: "爸爸", icon: "爸", tone: "tone-red", text: "新增任務：確認媽媽新藥", type: "normal" },
-    { id: 3, actor: "姐姐", icon: "姐", tone: "tone-teal", text: "完成：補藥盒", type: "normal" },
+    { id: 1, actor: "Sam", icon: "你", tone: "tone-gold", text: "新增任務：買牛奶 給姐姐", type: "normal" },
   ],
   chat: [
-    { id: 1, actor: "爸爸", text: "大家今天狀況如何？Sam 先回報一下。", type: "checkin" },
-    { id: 2, actor: "姐姐", text: "我晚上會去買菜，順便拿包裹。", type: "normal" },
-    { id: 3, actor: "Sam", text: "收到，我回家後處理垃圾。", type: "normal" },
+    { id: 1, actor: "Sam", text: "這裡可以留家庭訊息，也可以把事情變成任務。", type: "normal" },
   ],
 };
 
@@ -367,6 +356,19 @@ function addInvitedMember() {
   markSynced();
 }
 
+function clearExamples() {
+  state.pendingCheckin = null;
+  state.tasks = [];
+  state.feed = [];
+  state.chat = [];
+  state.backendStatus = "已初始化";
+  state.members = state.members.map((member) => ({
+    ...member,
+    health: "😐",
+    note: member.name === state.currentUser ? "家庭擁有者" : "已加入家庭",
+  }));
+}
+
 function currentTaskTitle() {
   return customTaskInput.value.trim() || state.selectedTemplate;
 }
@@ -394,6 +396,14 @@ document.body.addEventListener("click", (event) => {
 
   const screenLink = event.target.closest("[data-screen-link]");
   if (screenLink) switchScreen(screenLink.dataset.screenLink);
+
+  const startAction = event.target.closest("[data-start-action]");
+  if (startAction) {
+    state.addMode = startAction.dataset.startAction === "checkin" ? "checkin" : "task";
+    if (state.addMode === "task" && state.selectedMember === "all") state.selectedMember = state.currentUser;
+    render();
+    switchScreen("add");
+  }
 
   const statusButton = event.target.closest("[data-status]");
   if (statusButton) {
@@ -618,6 +628,12 @@ document.querySelector("#simulateJoinButton").addEventListener("click", () => {
 
 document.querySelector("#resetDemoButton").addEventListener("click", () => {
   state = structuredClone(initialState);
+  render();
+  switchScreen("today");
+});
+
+document.querySelector("#clearDemoButton").addEventListener("click", () => {
+  clearExamples();
   render();
   switchScreen("today");
 });

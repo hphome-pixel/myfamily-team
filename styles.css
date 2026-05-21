@@ -145,6 +145,45 @@ h2 {
   box-shadow: var(--shadow);
 }
 
+.intro-card {
+  display: grid;
+  gap: 12px;
+  padding: 17px;
+  border-radius: 8px;
+  background: var(--teal);
+  color: white;
+  box-shadow: var(--shadow);
+}
+
+.intro-card span {
+  width: fit-content;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.intro-card h2 {
+  font-size: 21px;
+  line-height: 1.35;
+}
+
+.starter-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.starter-actions button {
+  min-height: 46px;
+  border: 0;
+  border-radius: 8px;
+  background: white;
+  color: var(--teal);
+  font-weight: 900;
+}
+
 .question-text {
   color: var(--ink);
   font-weight: 800;
@@ -621,7 +660,7 @@ h2 {
 }
 
 .admin-actions {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
 }
 
 .invite-code {
