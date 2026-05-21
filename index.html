@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>家裡小隊</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="phone-shell">
+      <header class="app-header">
+        <div>
+          <p class="today-label">今天 5/20・5 人家庭</p>
+          <h1>家裡小隊</h1>
+        </div>
+        <div class="header-actions">
+          <button class="alert-chip" id="sosOpenButton" type="button">緊急</button>
+          <button class="role-chip" id="roleToggle" type="button">Admin</button>
+        </div>
+      </header>
+
+      <section class="screen active" id="todayScreen" aria-label="今天">
+        <section class="block checkin-card" id="pendingCheckinCard">
+          <div class="block-title">
+            <h2 id="checkinQuestionTitle">狀態詢問</h2>
+            <span id="checkinQuestionFrom">待回報</span>
+          </div>
+          <p class="question-text" id="checkinQuestionText">爸爸問你今天狀況如何？</p>
+          <div class="emoji-row" id="statusPicker" aria-label="狀態回報"></div>
+          <div class="reply-row">
+            <input id="statusNoteInput" type="text" placeholder="可加一句話，例如：今天有點累" />
+            <button class="primary-button" id="sendStatusButton" type="button">送出</button>
+          </div>
+        </section>
+
+        <section class="block">
+          <div class="block-title">
+            <h2>今天要做</h2>
+            <button class="plain-button" data-screen-link="add">新增</button>
+          </div>
+          <div class="task-list" id="todayTasks"></div>
+        </section>
+
+        <section class="block">
+          <div class="block-title">
+            <h2>快速新增</h2>
+            <span>點一下就開始</span>
+          </div>
+          <div class="template-grid" id="quickTemplates"></div>
+        </section>
+
+        <section class="block">
+          <div class="block-title">
+            <h2>家庭動態</h2>
+            <button class="plain-button" data-screen-link="chat">聊天</button>
+          </div>
+          <div class="feed-list compact-feed" id="todayFeed"></div>
+        </section>
+      </section>
+
+      <section class="screen" id="familyScreen" aria-label="家人">
+        <section class="block invite-block">
+          <div class="block-title">
+            <h2>邀請家人</h2>
+            <span id="inviteStatusText">連結邀請</span>
+          </div>
+          <p class="helper-text">傳連結或邀請碼給家人，對方用手機網頁加入這個家庭。</p>
+          <div class="invite-code" id="inviteCode">FAM-8392</div>
+          <div class="invite-actions">
+            <button class="secondary-button" id="copyInviteButton" type="button">複製連結</button>
+            <button class="primary-button" id="simulateJoinButton" type="button">模擬加入</button>
+          </div>
+        </section>
+
+        <section class="block">
+          <div class="block-title">
+            <h2>家人狀態</h2>
+            <button class="plain-button admin-only" id="addMemberButton">新增</button>
+          </div>
+          <div class="member-list" id="memberList"></div>
+        </section>
+      </section>
+
+      <section class="screen" id="addScreen" aria-label="新增">
+        <section class="block">
+          <div class="block-title">
+            <h2>快速操作</h2>
+            <span id="addModeHint">新增任務</span>
+          </div>
+          <div class="action-row">
+            <button class="action-button active" id="taskModeButton" type="button">新增任務</button>
+            <button class="action-button" id="checkinModeButton" type="button">問狀態</button>
+          </div>
+        </section>
+
+        <div class="mode-panel active" id="taskPanel">
+        <section class="block">
+          <div class="block-title">
+            <h2>快速模板</h2>
+            <span id="selectedTemplateText">買菜</span>
+          </div>
+          <div class="template-grid large" id="templatePicker"></div>
+          <div class="inline-input-group">
+            <div class="block-title compact-title">
+              <h2>自訂任務</h2>
+              <span>可選填</span>
+            </div>
+            <input class="text-input" id="customTaskInput" type="text" placeholder="例如：幫媽媽拿藥" />
+          </div>
+        </section>
+        </div>
+
+        <div class="mode-panel" id="checkinPanel">
+        <section class="block">
+          <div class="block-title">
+            <h2>想問什麼</h2>
+            <span id="selectedQuestionText">今天狀況如何？</span>
+          </div>
+          <div class="question-grid" id="questionPicker"></div>
+          <input class="text-input" id="customQuestionInput" type="text" placeholder="自訂問題，例如：到家了嗎？" />
+        </section>
+        </div>
+
+        <section class="block">
+          <div class="block-title">
+            <h2 id="memberPickerTitle">給誰做</h2>
+            <span id="selectedMemberText">Sam</span>
+          </div>
+          <div class="avatar-picker" id="memberPicker"></div>
+          <button class="wide-soft-button" id="selectAllButton" type="button">問大家</button>
+        </section>
+
+        <section class="block" id="timeBlock">
+          <div class="block-title">
+            <h2>什麼時候</h2>
+            <span id="selectedTimeText">今天</span>
+          </div>
+          <div class="segmented" id="timePicker">
+            <button class="active" type="button" data-time="今天">今天</button>
+            <button type="button" data-time="明天">明天</button>
+            <button type="button" data-time="每天">每天</button>
+            <button type="button" data-time="週末">週末</button>
+          </div>
+        </section>
+
+        <button class="create-button" id="createTaskButton" type="button">建立任務</button>
+      </section>
+
+      <section class="screen chat-screen" id="chatScreen" aria-label="家庭群聊">
+        <section class="block">
+          <div class="block-title">
+            <h2>家庭群聊</h2>
+            <button class="plain-button" id="shareButton">分享</button>
+          </div>
+          <div class="chat-list" id="chatList"></div>
+          <div class="chat-composer">
+            <input id="chatInput" type="text" placeholder="輸入訊息或交代事情" />
+            <button class="primary-button" id="sendChatButton" type="button">送出</button>
+          </div>
+        </section>
+      </section>
+
+      <section class="screen" id="adminScreen" aria-label="管理">
+        <section class="block">
+          <div class="block-title">
+            <h2>家庭空間</h2>
+            <span id="syncStatusText">已同步</span>
+          </div>
+          <div class="sync-card">
+            <strong id="familyNameText">Sam 的家</strong>
+            <small>資料存在後端，家人加入後會看到同一份任務、聊天和狀態詢問。</small>
+          </div>
+        </section>
+
+        <section class="block">
+          <div class="block-title">
+            <h2>帳號管理</h2>
+            <span id="roleNote">Admin 可刪除內容</span>
+          </div>
+          <div class="admin-actions">
+            <button id="resetDemoButton" type="button">重設示範資料</button>
+            <button id="addDemoTaskButton" type="button">新增隨機任務</button>
+          </div>
+        </section>
+
+        <section class="block">
+          <div class="block-title">
+            <h2>任務管理</h2>
+            <span>只有作者或 Admin 可刪</span>
+          </div>
+          <div class="task-list" id="adminTasks"></div>
+        </section>
+      </section>
+
+      <nav class="bottom-nav" aria-label="底部導航">
+        <button class="active" type="button" data-screen="today"><span>⌂</span>今天</button>
+        <button type="button" data-screen="chat"><span>☏</span>聊天</button>
+        <button type="button" data-screen="family"><span>○</span>家人</button>
+        <button type="button" data-screen="add"><span>＋</span>新增</button>
+        <button type="button" data-screen="admin"><span>⚙</span>管理</button>
+      </nav>
+
+      <div class="confirm-layer" id="sosConfirm" aria-hidden="true">
+        <div class="confirm-card">
+          <strong>確定要通知全部家人？</strong>
+          <p>這會送出緊急求助訊息到家庭群聊。</p>
+          <div class="confirm-actions">
+            <button class="secondary-button" id="sosCancelButton" type="button">取消</button>
+            <button class="danger-button" id="sosSendButton" type="button">發送求助</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
