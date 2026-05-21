@@ -10,19 +10,26 @@
     <main class="phone-shell">
       <header class="app-header">
         <div>
-          <p class="today-label">今天 5/20・5 人家庭</p>
+          <p class="today-label" id="todayMeta">今天・家庭</p>
           <h1>家裡小隊</h1>
         </div>
         <div class="header-actions">
-          <button class="alert-chip" id="sosOpenButton" type="button">緊急</button>
+          <button class="alert-chip" id="sosOpenButton" type="button">
+            <img src="assets/icons/Urgent/緊急按鈕.png" alt="" />
+            <span>緊急</span>
+          </button>
           <button class="role-chip" id="roleToggle" type="button">Admin</button>
         </div>
       </header>
 
       <section class="screen active" id="todayScreen" aria-label="今天">
         <section class="intro-card">
-          <span>測試版</span>
-          <h2>家人分工、問狀態、留訊息，不用一直翻 LINE。</h2>
+          <img class="hero-image" id="heroImage" src="assets/icons/Hero Banner/白天.png" alt="" />
+          <div class="hero-copy">
+            <span>測試版</span>
+            <h2>家人分工、問狀態、留訊息。</h2>
+            <p>把家裡每天的小事放在一起。</p>
+          </div>
           <div class="starter-actions">
             <button type="button" data-start-action="task">新增任務</button>
             <button type="button" data-start-action="checkin">問狀態</button>
@@ -49,14 +56,6 @@
             <button class="plain-button" data-screen-link="add">新增</button>
           </div>
           <div class="task-list" id="todayTasks"></div>
-        </section>
-
-        <section class="block">
-          <div class="block-title">
-            <h2>快速新增</h2>
-            <span>點一下就開始</span>
-          </div>
-          <div class="template-grid" id="quickTemplates"></div>
         </section>
 
         <section class="block">
@@ -151,6 +150,10 @@
             <button type="button" data-time="每天">每天</button>
             <button type="button" data-time="週末">週末</button>
           </div>
+          <div class="date-picker-row">
+            <button class="date-pick-button" id="chooseDateButton" type="button">選日期</button>
+            <input id="customDateInput" type="date" />
+          </div>
         </section>
 
         <button class="create-button" id="createTaskButton" type="button">建立任務</button>
@@ -184,6 +187,30 @@
 
         <section class="block">
           <div class="block-title">
+            <h2>Banner 測試</h2>
+            <span id="heroModeText">自動 Banner</span>
+          </div>
+          <div class="segmented test-segmented" id="heroModePicker">
+            <button class="active" type="button" data-hero-mode="auto">自動</button>
+            <button type="button" data-hero-mode="day">白天</button>
+            <button type="button" data-hero-mode="night">晚上</button>
+            <button type="button" data-hero-mode="rain">雨天</button>
+          </div>
+        </section>
+
+        <section class="block">
+          <div class="block-title">
+            <h2>日期測試</h2>
+            <span id="dateModeText">今天</span>
+          </div>
+          <div class="segmented test-segmented" id="dateModePicker">
+            <button class="active" type="button" data-date-offset="0">今天</button>
+            <button type="button" data-date-offset="1">模擬明天</button>
+          </div>
+        </section>
+
+        <section class="block">
+          <div class="block-title">
             <h2>帳號管理</h2>
             <span id="roleNote">Admin 可刪除內容</span>
           </div>
@@ -197,18 +224,18 @@
         <section class="block">
           <div class="block-title">
             <h2>任務管理</h2>
-            <span>只有作者或 Admin 可刪</span>
+            <span>建立者或 Admin 可刪</span>
           </div>
           <div class="task-list" id="adminTasks"></div>
         </section>
       </section>
 
       <nav class="bottom-nav" aria-label="底部導航">
-        <button class="active" type="button" data-screen="today"><span>⌂</span>今天</button>
-        <button type="button" data-screen="chat"><span>☏</span>聊天</button>
-        <button type="button" data-screen="family"><span>○</span>家人</button>
-        <button type="button" data-screen="add"><span>＋</span>新增</button>
-        <button type="button" data-screen="admin"><span>⚙</span>管理</button>
+        <button class="active" type="button" data-screen="today"><span><img src="assets/icons/Navbar ICON/今天.png" alt="" /></span>今天</button>
+        <button type="button" data-screen="chat"><span><img src="assets/icons/Navbar ICON/聊天.png" alt="" /></span>聊天</button>
+        <button type="button" data-screen="family"><span><img src="assets/icons/Navbar ICON/家人.png" alt="" /></span>家人</button>
+        <button type="button" data-screen="add"><span><img src="assets/icons/Navbar ICON/新增.png" alt="" /></span>新增</button>
+        <button type="button" data-screen="admin"><span><img src="assets/icons/Navbar ICON/管理.png" alt="" /></span>管理</button>
       </nav>
 
       <div class="confirm-layer" id="sosConfirm" aria-hidden="true">
@@ -221,8 +248,20 @@
           </div>
         </div>
       </div>
+
+      <div class="confirm-layer" id="deleteTaskConfirm" aria-hidden="true">
+        <div class="confirm-card">
+          <strong id="deleteTaskTitle">確定刪除任務？</strong>
+          <p id="deleteTaskMessage">刪除後會從今天任務和管理頁移除。</p>
+          <div class="confirm-actions">
+            <button class="secondary-button" id="deleteTaskCancelButton" type="button">取消</button>
+            <button class="danger-button" id="deleteTaskConfirmButton" type="button">刪除</button>
+          </div>
+        </div>
+      </div>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="app.js"></script>
   </body>
 </html>

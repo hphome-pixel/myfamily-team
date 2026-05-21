@@ -10,6 +10,9 @@ const initialState = {
   addMode: "task",
   selectedQuestion: "今天狀況如何？",
   selectedStatus: "😄",
+  weatherMode: "auto",
+  heroMode: "auto",
+  dateOffsetDays: 0,
   pendingCheckin: null,
   members: [
     { name: "Sam", short: "你", tone: "tone-gold", health: "😄", note: "今天值班" },
@@ -18,8 +21,8 @@ const initialState = {
     { name: "媽媽", short: "媽", tone: "tone-blue", health: "😐", note: "已加入家庭" },
   ],
   tasks: [
-    { id: 1, title: "買牛奶", owner: "姐姐", time: "今天", author: "Sam", done: false },
-    { id: 2, title: "倒垃圾", owner: "Sam", time: "今天", author: "Sam", done: false },
+    { id: 1, title: "買牛奶", owner: "姐姐", time: "今天", dueDate: null, author: "Sam", done: false },
+    { id: 2, title: "倒垃圾", owner: "Sam", time: "今天", dueDate: null, author: "Sam", done: false },
   ],
   feed: [
     { id: 1, actor: "Sam", icon: "你", tone: "tone-gold", text: "新增任務：買牛奶 給姐姐", type: "normal" },
@@ -30,6 +33,15 @@ const initialState = {
 };
 
 let state = structuredClone(initialState);
+let pendingDeleteTaskId = null;
+let familyId = null;
+let remoteReady = false;
+let realtimeChannel = null;
+
+const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtyd3NtaHJha3BjZG1vY2Nra21mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzOTczNzksImV4cCI6MjA5NDk3MzM3OX0.y-msZ7K96ldRBgUqQUCK90SPZEM9BKaQqfKGV1WbNSs";
+const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const statusOptions = [
   { emoji: "😄", label: "OK" },
@@ -40,14 +52,14 @@ const statusOptions = [
 ];
 
 const templates = [
-  { icon: "🛒", title: "買菜" },
-  { icon: "🗑", title: "倒垃圾" },
-  { icon: "💊", title: "吃藥" },
-  { icon: "🩺", title: "量血壓" },
-  { icon: "🚗", title: "接送" },
-  { icon: "💳", title: "繳費" },
-  { icon: "📦", title: "拿包裹" },
-  { icon: "📞", title: "打電話" },
+  { icon: "assets/icons/Task ICON/買菜.png", title: "買菜" },
+  { icon: "assets/icons/Task ICON/到垃圾.png", title: "倒垃圾" },
+  { icon: "assets/icons/Task ICON/吃藥.png", title: "吃藥" },
+  { icon: "assets/icons/Task ICON/量血壓.png", title: "量血壓" },
+  { icon: "assets/icons/Task ICON/接送.png", title: "接送" },
+  { icon: "assets/icons/Task ICON/繳費.png", title: "繳費" },
+  { icon: "assets/icons/Task ICON/拿包裹.png", title: "拿包裹" },
+  { icon: "assets/icons/Task ICON/打電話.png", title: "打電話" },
 ];
 
 const questionTemplates = ["今天狀況如何？", "到家了嗎？", "吃飯了嗎？", "需要幫忙嗎？"];
@@ -62,7 +74,8 @@ const screens = {
 
 const navButtons = document.querySelectorAll("[data-screen]");
 const statusPicker = document.querySelector("#statusPicker");
-const quickTemplates = document.querySelector("#quickTemplates");
+const todayMeta = document.querySelector("#todayMeta");
+const heroImage = document.querySelector("#heroImage");
 const templatePicker = document.querySelector("#templatePicker");
 const memberPicker = document.querySelector("#memberPicker");
 const todayTasks = document.querySelector("#todayTasks");
@@ -94,10 +107,18 @@ const memberPickerTitle = document.querySelector("#memberPickerTitle");
 const selectAllButton = document.querySelector("#selectAllButton");
 const timeBlock = document.querySelector("#timeBlock");
 const sosConfirm = document.querySelector("#sosConfirm");
+const deleteTaskConfirm = document.querySelector("#deleteTaskConfirm");
+const deleteTaskTitle = document.querySelector("#deleteTaskTitle");
+const deleteTaskMessage = document.querySelector("#deleteTaskMessage");
+const chooseDateButton = document.querySelector("#chooseDateButton");
+const customDateInput = document.querySelector("#customDateInput");
+const datePickerRow = document.querySelector(".date-picker-row");
 const inviteCode = document.querySelector("#inviteCode");
 const inviteStatusText = document.querySelector("#inviteStatusText");
 const syncStatusText = document.querySelector("#syncStatusText");
 const familyNameText = document.querySelector("#familyNameText");
+const heroModeText = document.querySelector("#heroModeText");
+const dateModeText = document.querySelector("#dateModeText");
 
 function switchScreen(name) {
   Object.entries(screens).forEach(([screenName, screen]) => {
@@ -119,6 +140,8 @@ function render() {
   renderCheckin();
   renderRole();
   renderFamilySpace();
+  renderTodayMeta();
+  renderHeroBanner();
   selectedTemplateText.textContent = state.selectedTemplate;
   selectedQuestionText.textContent = state.selectedQuestion;
   selectedMemberText.textContent = state.selectedMember === "all" ? "大家" : state.selectedMember;
@@ -133,12 +156,47 @@ function render() {
   selectAllButton.classList.toggle("active", state.selectedMember === "all");
   taskModeButton.classList.toggle("active", state.addMode === "task");
   checkinModeButton.classList.toggle("active", state.addMode === "checkin");
+  renderHeroModeControls();
+  renderDateModeControls();
+}
+
+function renderTodayMeta() {
+  const date = currentDate();
+  const monthDay = new Intl.DateTimeFormat("zh-TW", { month: "numeric", day: "numeric" }).format(date);
+  const weekday = new Intl.DateTimeFormat("zh-TW", { weekday: "short" }).format(date);
+  todayMeta.textContent = `${monthDay} ${weekday}・${state.members.length} 人家庭・天氣待開啟`;
+}
+
+function renderHeroBanner() {
+  heroImage.src = heroImageForNow();
+}
+
+function renderHeroModeControls() {
+  if (!heroModeText) return;
+  const labelMap = {
+    auto: "自動 Banner",
+    day: "白天 Banner",
+    night: "晚上 Banner",
+    rain: "雨天 Banner",
+  };
+  heroModeText.textContent = labelMap[state.heroMode] || "自動 Banner";
+  document.querySelectorAll("[data-hero-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.heroMode === state.heroMode);
+  });
+}
+
+function renderDateModeControls() {
+  if (!dateModeText) return;
+  dateModeText.textContent = state.dateOffsetDays === 1 ? "模擬明天" : "今天";
+  document.querySelectorAll("[data-date-offset]").forEach((button) => {
+    button.classList.toggle("active", Number(button.dataset.dateOffset) === state.dateOffsetDays);
+  });
 }
 
 function renderFamilySpace() {
   inviteCode.textContent = state.inviteCode;
   inviteStatusText.textContent = `${state.members.length} 人已加入`;
-  syncStatusText.textContent = state.backendStatus;
+  syncStatusText.textContent = remoteReady ? "Supabase 同步中" : state.backendStatus;
   familyNameText.textContent = state.familyName;
 }
 
@@ -160,13 +218,12 @@ function renderTemplates() {
     .map(
       (template) => `
         <button class="template-button ${template.title === state.selectedTemplate ? "active" : ""}" type="button" data-template="${escapeHtml(template.title)}">
-          <span>${template.icon}</span>
+          <span><img src="${escapeHtml(template.icon)}" alt="" /></span>
           ${escapeHtml(template.title)}
         </button>
       `,
     )
     .join("");
-  quickTemplates.innerHTML = markup;
   templatePicker.innerHTML = markup;
 }
 
@@ -211,21 +268,29 @@ function renderMembers() {
 }
 
 function renderTasks() {
-  const today = state.tasks.filter((task) => task.time === "今天" || task.time === "每天");
-  todayTasks.innerHTML = today.length ? today.map(taskTemplate).join("") : emptyText("今天沒有任務");
+  const today = state.tasks.filter((task) => isTaskDueToday(task));
+  const overdue = state.tasks.filter((task) => isTaskOverdue(task));
+  const sections = [];
+  if (today.length) sections.push(today.map(taskTemplate).join(""));
+  if (overdue.length) {
+    sections.push(`<div class="task-section-label">逾期未完成</div>${overdue.map(taskTemplate).join("")}`);
+  }
+  todayTasks.innerHTML = sections.length ? sections.join("") : emptyText("今天沒有任務");
   adminTasks.innerHTML = state.tasks.length ? state.tasks.map(taskTemplate).join("") : emptyText("還沒有任務");
 }
 
 function taskTemplate(task) {
   const canCompleteTask = canComplete(task);
+  const canDeleteThisTask = canDeleteTask(task);
+  const done = isTaskComplete(task);
   return `
-    <article class="task-item ${task.done ? "done" : ""}">
+    <article class="task-item ${done ? "done" : ""}">
       <button class="check-button ${canCompleteTask ? "" : "locked"}" type="button" ${canCompleteTask ? `data-toggle-task="${task.id}"` : "disabled"} aria-label="${canCompleteTask ? "切換完成" : "只有被指派的人或 Admin 可完成"}">✓</button>
       <div class="task-main">
         <strong>${escapeHtml(task.title)}</strong>
-        <small>${escapeHtml(task.owner)}・${escapeHtml(task.time)}・${escapeHtml(task.author)} 建立</small>
+        <small>${escapeHtml(task.owner)}・${escapeHtml(displayTaskTime(task))}・${escapeHtml(task.author)} 建立</small>
       </div>
-      ${canDelete(task.author) ? `<button class="delete-button" type="button" data-delete-task="${task.id}">×</button>` : ""}
+      ${canDeleteThisTask ? `<button class="delete-button" type="button" data-delete-task="${task.id}" aria-label="刪除任務">×</button>` : ""}
     </article>
   `;
 }
@@ -297,6 +362,10 @@ function canComplete(task) {
   return state.role === "admin" || task.owner === state.currentUser;
 }
 
+function canDeleteTask(task) {
+  return state.role === "admin" || task.author === state.currentUser;
+}
+
 function addFeed(text, type = "normal", actor = state.currentUser) {
   const member = state.members.find((item) => item.name === actor) || currentMember();
   state.feed.unshift({
@@ -310,23 +379,50 @@ function addFeed(text, type = "normal", actor = state.currentUser) {
 }
 
 function addChat(text, type = "normal", actor = state.currentUser) {
-  state.chat.push({
-    id: Date.now() + Math.random(),
+  const localMessage = {
+    id: `local-${Date.now()}-${Math.random()}`,
     actor,
     text,
     type,
-  });
+  };
+  state.chat.push(localMessage);
+  if (remoteReady && familyId) {
+    supabaseClient
+      .from("messages")
+      .insert({ family_id: familyId, actor, text, type })
+      .then(({ error }) => {
+        if (error) console.warn("Message sync failed", error);
+      });
+  }
 }
 
-function addTask(title = state.selectedTemplate, owner = state.selectedMember, time = state.selectedTime) {
-  state.tasks.unshift({
-    id: Date.now() + Math.random(),
+async function addTask(title = state.selectedTemplate, owner = state.selectedMember, time = state.selectedTime) {
+  const schedule = scheduleFromTime(time);
+  const task = {
+    id: `local-${Date.now()}-${Math.random()}`,
     title,
     owner,
     time,
+    dueDate: schedule.dueDate,
+    repeat: schedule.repeat,
     author: state.currentUser,
     done: false,
-  });
+  };
+  if (remoteReady && familyId) {
+    const { data, error } = await supabaseClient
+      .from("tasks")
+      .insert(toRemoteTask(task))
+      .select()
+      .single();
+    if (error) {
+      console.warn("Task sync failed", error);
+      state.tasks.unshift(task);
+    } else {
+      state.tasks.unshift(fromRemoteTask(data));
+    }
+  } else {
+    state.tasks.unshift(task);
+  }
   addFeed(`新增任務：${title} 給 ${owner}`);
   addChat(`新增任務：${title} 給 ${owner}，時間：${time}`, "task");
   markSynced();
@@ -334,6 +430,298 @@ function addTask(title = state.selectedTemplate, owner = state.selectedMember, t
 
 function markSynced() {
   state.backendStatus = "剛剛同步";
+}
+
+function sameId(a, b) {
+  return String(a) === String(b);
+}
+
+function fromRemoteMember(member) {
+  return {
+    id: member.id,
+    name: member.name,
+    short: member.short,
+    tone: member.role === "admin" ? "tone-gold" : "tone-teal",
+    health: member.health || "😐",
+    note: member.note || "已加入家庭",
+    role: member.role || "member",
+  };
+}
+
+function fromRemoteTask(task) {
+  return {
+    id: task.id,
+    title: task.title,
+    owner: task.owner,
+    author: task.author,
+    time: task.time_label,
+    dueDate: task.due_date,
+    repeat: task.repeat,
+    done: task.done,
+    lastCompletedDate: task.last_completed_date,
+  };
+}
+
+function toRemoteTask(task) {
+  return {
+    family_id: familyId,
+    title: task.title,
+    owner: task.owner,
+    author: task.author,
+    time_label: task.time,
+    due_date: task.dueDate,
+    repeat: task.repeat,
+    done: task.done,
+    last_completed_date: task.lastCompletedDate || null,
+  };
+}
+
+function fromRemoteMessage(message) {
+  return {
+    id: message.id,
+    actor: message.actor,
+    text: message.text,
+    type: message.type || "normal",
+  };
+}
+
+function messageToFeed(message) {
+  const member = state.members.find((item) => item.name === message.actor) || currentMember();
+  return {
+    id: message.id,
+    actor: message.actor,
+    icon: member.short,
+    tone: member.tone,
+    text: message.text,
+    type: message.type === "emergency" ? "emergency" : "normal",
+  };
+}
+
+async function initRemote() {
+  if (!supabaseClient) {
+    state.backendStatus = "本機模式";
+    return;
+  }
+  try {
+    let { data: family, error: familyError } = await supabaseClient
+      .from("families")
+      .select("*")
+      .eq("invite_code", state.inviteCode)
+      .maybeSingle();
+    if (familyError) throw familyError;
+    if (!family) {
+      const created = await supabaseClient
+        .from("families")
+        .insert({ name: state.familyName, invite_code: state.inviteCode })
+        .select()
+        .single();
+      if (created.error) throw created.error;
+      family = created.data;
+    }
+    familyId = family.id;
+    state.familyName = family.name;
+    remoteReady = true;
+    await loadRemoteData();
+    subscribeRemote();
+  } catch (error) {
+    console.warn("Supabase init failed", error);
+    state.backendStatus = "本機模式";
+  }
+}
+
+async function loadRemoteData(shouldRender = true) {
+  if (!remoteReady || !familyId) return;
+  const [{ data: members, error: membersError }, { data: tasks, error: tasksError }, { data: messages, error: messagesError }] =
+    await Promise.all([
+      supabaseClient.from("members").select("*").eq("family_id", familyId).order("created_at"),
+      supabaseClient.from("tasks").select("*").eq("family_id", familyId).order("created_at", { ascending: false }),
+      supabaseClient.from("messages").select("*").eq("family_id", familyId).order("created_at", { ascending: true }),
+    ]);
+
+  if (membersError || tasksError || messagesError) {
+    console.warn("Remote load failed", membersError || tasksError || messagesError);
+    state.backendStatus = "同步失敗";
+    if (shouldRender) render();
+    return;
+  }
+
+  state.members = members.map(fromRemoteMember);
+  if (!state.members.length) {
+    await seedRemoteMembers();
+    return loadRemoteData(shouldRender);
+  }
+  state.tasks = tasks.map(fromRemoteTask);
+  state.chat = messages.map(fromRemoteMessage);
+  state.feed = messages.slice(-6).reverse().map(messageToFeed);
+  state.backendStatus = "Supabase 同步中";
+  if (shouldRender) render();
+}
+
+function subscribeRemote() {
+  if (!remoteReady || realtimeChannel) return;
+  realtimeChannel = supabaseClient
+    .channel("family-workspace")
+    .on("postgres_changes", { event: "*", schema: "public", table: "members" }, () => loadRemoteData())
+    .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, () => loadRemoteData())
+    .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, () => loadRemoteData())
+    .subscribe();
+}
+
+async function seedRemoteMembers() {
+  if (!remoteReady || !familyId) return;
+  const seedMembers = initialState.members.map((member) => ({
+    family_id: familyId,
+    name: member.name,
+    short: member.short,
+    role: member.name === state.currentUser ? "admin" : "member",
+    health: member.health,
+    note: member.note,
+  }));
+  const { error } = await supabaseClient.from("members").insert(seedMembers);
+  if (error) console.warn("Member seed failed", error);
+}
+
+async function refreshRemoteSoon() {
+  if (!remoteReady || !familyId) return;
+  await loadRemoteData(false);
+}
+
+async function updateRemoteTask(task) {
+  if (!remoteReady || !familyId || String(task.id).startsWith("local-")) return;
+  const { error } = await supabaseClient.from("tasks").update(toRemoteTask(task)).eq("id", task.id);
+  if (error) console.warn("Task update sync failed", error);
+}
+
+async function updateRemoteMember(member) {
+  if (!remoteReady || !familyId) return;
+  const query = supabaseClient
+    .from("members")
+    .update({
+      health: member.health,
+      note: member.note,
+      short: member.short,
+      role: member.role || (member.name === state.currentUser ? "admin" : "member"),
+    })
+    .eq("family_id", familyId)
+    .eq("name", member.name);
+  const { error } = await query;
+  if (error) console.warn("Member update sync failed", error);
+}
+
+async function insertRemoteMember(member) {
+  if (!remoteReady || !familyId) return;
+  const { error } = await supabaseClient.from("members").insert({
+    family_id: familyId,
+    name: member.name,
+    short: member.short,
+    role: member.role || "member",
+    health: member.health,
+    note: member.note,
+  });
+  if (error) console.warn("Member insert sync failed", error);
+}
+
+async function deleteRemoteMessage(id) {
+  if (!remoteReady || !familyId || String(id).startsWith("local-")) return;
+  const { error } = await supabaseClient.from("messages").delete().eq("id", id);
+  if (error) console.warn("Message delete sync failed", error);
+}
+
+async function clearRemoteExamples() {
+  if (!remoteReady || !familyId) return;
+  const [{ error: taskError }, { error: messageError }] = await Promise.all([
+    supabaseClient.from("tasks").delete().eq("family_id", familyId),
+    supabaseClient.from("messages").delete().eq("family_id", familyId),
+  ]);
+  if (taskError || messageError) console.warn("Remote clear failed", taskError || messageError);
+  await Promise.all(state.members.map(updateRemoteMember));
+}
+
+async function resetRemoteDemo() {
+  if (!remoteReady || !familyId) return;
+  const [{ error: taskError }, { error: messageError }, { error: memberError }] = await Promise.all([
+    supabaseClient.from("tasks").delete().eq("family_id", familyId),
+    supabaseClient.from("messages").delete().eq("family_id", familyId),
+    supabaseClient.from("members").delete().eq("family_id", familyId),
+  ]);
+  if (taskError || messageError || memberError) console.warn("Remote reset failed", taskError || messageError || memberError);
+  await seedRemoteMembers();
+  await loadRemoteData(false);
+}
+
+function todayISO() {
+  return localISODate(currentDate());
+}
+
+function currentDate() {
+  return addDays(new Date(), state.dateOffsetDays || 0);
+}
+
+function localISODate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function scheduleFromTime(time) {
+  if (time === "每天") return { dueDate: todayISO(), repeat: "daily" };
+  if (time === "明天") return { dueDate: localISODate(addDays(currentDate(), 1)), repeat: null };
+  if (time === "週末") return { dueDate: nextWeekendISO(), repeat: null };
+  if (/^\d{4}\/\d{2}\/\d{2}$/.test(time)) return { dueDate: time.replaceAll("/", "-"), repeat: null };
+  return { dueDate: todayISO(), repeat: null };
+}
+
+function nextWeekendISO() {
+  const date = currentDate();
+  const day = date.getDay();
+  const daysUntilSaturday = (6 - day + 7) % 7 || 7;
+  return localISODate(addDays(date, daysUntilSaturday));
+}
+
+function taskDueDate(task) {
+  return task.dueDate || scheduleFromTime(task.time).dueDate;
+}
+
+function isTaskComplete(task) {
+  if (task.repeat === "daily" || task.time === "每天") {
+    return task.lastCompletedDate === todayISO();
+  }
+  return task.done;
+}
+
+function isTaskDueToday(task) {
+  if (task.repeat === "daily" || task.time === "每天") return true;
+  return taskDueDate(task) === todayISO();
+}
+
+function isTaskOverdue(task) {
+  if (task.repeat === "daily" || task.time === "每天") return false;
+  return !isTaskComplete(task) && taskDueDate(task) < todayISO();
+}
+
+function displayTaskTime(task) {
+  if (task.repeat === "daily" || task.time === "每天") return "每天";
+  const dueDate = taskDueDate(task);
+  if (dueDate === todayISO()) return "今天";
+  if (dueDate === localISODate(addDays(currentDate(), 1))) return "明天";
+  return dueDate.replaceAll("-", "/");
+}
+
+function heroImageForNow() {
+  if (state.heroMode === "day") return "assets/icons/Hero Banner/白天.png";
+  if (state.heroMode === "night") return "assets/icons/Hero Banner/晚上.png";
+  if (state.heroMode === "rain") return "assets/icons/Hero Banner/雨天.png";
+  if (state.weatherMode === "rain") return "assets/icons/Hero Banner/雨天.png";
+  const hour = currentDate().getHours();
+  if (hour >= 18 || hour < 6) return "assets/icons/Hero Banner/晚上.png";
+  return "assets/icons/Hero Banner/白天.png";
 }
 
 function inviteUrl() {
@@ -344,13 +732,29 @@ function inviteUrl() {
 function addInvitedMember() {
   const invitedNames = ["小姑", "弟弟", "室友", "阿姨"];
   const nextName = invitedNames.find((name) => !state.members.some((member) => member.name === name)) || `家人${state.members.length + 1}`;
-  state.members.push({
+  const member = {
     name: nextName,
     short: nextName.slice(0, 1),
     tone: "tone-blue",
     health: "😐",
     note: "剛用邀請連結加入",
-  });
+  };
+  state.members.push(member);
+  if (remoteReady && familyId) {
+    supabaseClient
+      .from("members")
+      .insert({
+        family_id: familyId,
+        name: member.name,
+        short: member.short,
+        role: "member",
+        health: member.health,
+        note: member.note,
+      })
+      .then(({ error }) => {
+        if (error) console.warn("Member sync failed", error);
+      });
+  }
   addFeed(`${nextName} 已加入 ${state.familyName}`);
   addChat(`${nextName} 已透過邀請連結加入家庭`, "system", "Sam");
   markSynced();
@@ -367,6 +771,45 @@ function clearExamples() {
     health: "😐",
     note: member.name === state.currentUser ? "家庭擁有者" : "已加入家庭",
   }));
+}
+
+function openDeleteTaskConfirm(task) {
+  pendingDeleteTaskId = task.id;
+  const isAdminDeletingOther = state.role === "admin" && task.author !== state.currentUser;
+  deleteTaskTitle.textContent = `確定刪除「${task.title}」？`;
+  deleteTaskMessage.textContent = isAdminDeletingOther
+    ? `你正在以 Admin 身分刪除 ${task.author} 建立的任務。`
+    : "刪除後會從今天任務和管理頁移除。";
+  deleteTaskConfirm.classList.add("active");
+  deleteTaskConfirm.setAttribute("aria-hidden", "false");
+}
+
+function closeDeleteTaskConfirm() {
+  pendingDeleteTaskId = null;
+  deleteTaskConfirm.classList.remove("active");
+  deleteTaskConfirm.setAttribute("aria-hidden", "true");
+}
+
+function deletePendingTask() {
+  const task = state.tasks.find((item) => sameId(item.id, pendingDeleteTaskId));
+  if (!task || !canDeleteTask(task)) {
+    closeDeleteTaskConfirm();
+    return;
+  }
+  state.tasks = state.tasks.filter((item) => !sameId(item.id, task.id));
+  if (remoteReady && familyId && !String(task.id).startsWith("local-")) {
+    supabaseClient
+      .from("tasks")
+      .delete()
+      .eq("id", task.id)
+      .then(({ error }) => {
+        if (error) console.warn("Task delete sync failed", error);
+      });
+  }
+  addFeed(`刪除任務：${task.title}`);
+  markSynced();
+  closeDeleteTaskConfirm();
+  render();
 }
 
 function currentTaskTitle() {
@@ -390,7 +833,7 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-document.body.addEventListener("click", (event) => {
+document.body.addEventListener("click", async (event) => {
   const screenButton = event.target.closest("[data-screen]");
   if (screenButton) switchScreen(screenButton.dataset.screen);
 
@@ -417,7 +860,6 @@ document.body.addEventListener("click", (event) => {
     if (customTaskInput) customTaskInput.value = state.selectedTemplate;
     if (state.addMode !== "task") state.addMode = "task";
     render();
-    if (event.target.closest("#quickTemplates")) switchScreen("add");
   }
 
   const questionButton = event.target.closest("[data-question]");
@@ -437,48 +879,67 @@ document.body.addEventListener("click", (event) => {
   if (timeButton) {
     state.selectedTime = timeButton.dataset.time;
     document.querySelectorAll("[data-time]").forEach((button) => button.classList.toggle("active", button === timeButton));
+    datePickerRow.classList.remove("active");
+    customDateInput.value = "";
     selectedTimeText.textContent = state.selectedTime;
+  }
+
+  const heroModeButton = event.target.closest("[data-hero-mode]");
+  if (heroModeButton) {
+    state.heroMode = heroModeButton.dataset.heroMode;
+    render();
+  }
+
+  const dateModeButton = event.target.closest("[data-date-offset]");
+  if (dateModeButton) {
+    state.dateOffsetDays = Number(dateModeButton.dataset.dateOffset);
+    render();
   }
 
   const toggleTaskButton = event.target.closest("[data-toggle-task]");
   if (toggleTaskButton) {
-    const task = state.tasks.find((item) => item.id === Number(toggleTaskButton.dataset.toggleTask));
+    const task = state.tasks.find((item) => sameId(item.id, toggleTaskButton.dataset.toggleTask));
     if (task) {
-      task.done = !task.done;
-      addFeed(`${task.done ? "完成" : "取消完成"}：${task.title}`);
-      addChat(`${task.done ? "完成" : "取消完成"}：${task.title}`, "task");
+      if (task.repeat === "daily" || task.time === "每天") {
+        task.lastCompletedDate = task.lastCompletedDate === todayISO() ? null : todayISO();
+      } else {
+        task.done = !task.done;
+      }
+      const completed = isTaskComplete(task);
+      await updateRemoteTask(task);
+      addFeed(`${completed ? "完成" : "取消完成"}：${task.title}`);
+      addChat(`${completed ? "完成" : "取消完成"}：${task.title}`, "task");
       render();
     }
   }
 
   const deleteTaskButton = event.target.closest("[data-delete-task]");
   if (deleteTaskButton) {
-    const id = Number(deleteTaskButton.dataset.deleteTask);
-    const task = state.tasks.find((item) => item.id === id);
-    if (task && canDelete(task.author)) {
-      state.tasks = state.tasks.filter((item) => item.id !== id);
-      addFeed(`刪除任務：${task.title}`);
-      markSynced();
-      render();
+    const id = deleteTaskButton.dataset.deleteTask;
+    const task = state.tasks.find((item) => sameId(item.id, id));
+    if (task && canDeleteTask(task)) {
+      openDeleteTaskConfirm(task);
     }
   }
 
   const deleteFeedButton = event.target.closest("[data-delete-feed]");
   if (deleteFeedButton) {
-    const id = Number(deleteFeedButton.dataset.deleteFeed);
-    const item = state.feed.find((feed) => feed.id === id);
+    const id = deleteFeedButton.dataset.deleteFeed;
+    const item = state.feed.find((feed) => sameId(feed.id, id));
     if (item && canDelete(item.actor)) {
-      state.feed = state.feed.filter((feed) => feed.id !== id);
+      state.feed = state.feed.filter((feed) => !sameId(feed.id, id));
+      await deleteRemoteMessage(id);
       render();
     }
   }
 
   const deleteChatButton = event.target.closest("[data-delete-chat]");
   if (deleteChatButton) {
-    const id = Number(deleteChatButton.dataset.deleteChat);
-    const item = state.chat.find((chat) => chat.id === id);
+    const id = deleteChatButton.dataset.deleteChat;
+    const item = state.chat.find((chat) => sameId(chat.id, id));
     if (item && canDelete(item.actor)) {
-      state.chat = state.chat.filter((chat) => chat.id !== id);
+      state.chat = state.chat.filter((chat) => !sameId(chat.id, id));
+      await deleteRemoteMessage(id);
       render();
     }
   }
@@ -489,6 +950,12 @@ document.body.addEventListener("click", (event) => {
     if (name !== state.currentUser) {
       state.members = state.members.filter((member) => member.name !== name);
       state.tasks = state.tasks.filter((task) => task.owner !== name);
+      if (remoteReady && familyId) {
+        await Promise.all([
+          supabaseClient.from("members").delete().eq("family_id", familyId).eq("name", name),
+          supabaseClient.from("tasks").delete().eq("family_id", familyId).eq("owner", name),
+        ]);
+      }
       addFeed(`移除成員：${name}`);
       markSynced();
       render();
@@ -496,10 +963,10 @@ document.body.addEventListener("click", (event) => {
   }
 });
 
-createTaskButton.addEventListener("click", () => {
+createTaskButton.addEventListener("click", async () => {
   if (state.addMode === "task") {
     if (state.selectedMember === "all") state.selectedMember = state.currentUser;
-    addTask(currentTaskTitle(), state.selectedMember, state.selectedTime);
+    await addTask(currentTaskTitle(), state.selectedMember, state.selectedTime);
     customTaskInput.value = "";
   } else {
     const target = state.selectedMember;
@@ -528,11 +995,17 @@ document.querySelector("#sosCancelButton").addEventListener("click", () => {
   sosConfirm.setAttribute("aria-hidden", "true");
 });
 
-document.querySelector("#sosSendButton").addEventListener("click", () => {
+document.querySelector("#deleteTaskCancelButton").addEventListener("click", closeDeleteTaskConfirm);
+
+document.querySelector("#deleteTaskConfirmButton").addEventListener("click", deletePendingTask);
+
+document.querySelector("#sosSendButton").addEventListener("click", async () => {
   sosConfirm.classList.remove("active");
   sosConfirm.setAttribute("aria-hidden", "true");
-  currentMember().health = "🚨";
-  currentMember().note = "剛剛按下緊急求助";
+  const member = currentMember();
+  member.health = "🚨";
+  member.note = "剛剛按下緊急求助";
+  await updateRemoteMember(member);
   addFeed("按下緊急求助，已通知全部家人", "emergency");
   addChat("🚨 緊急求助：請家人立刻確認。", "emergency");
   markSynced();
@@ -561,6 +1034,24 @@ selectAllButton.addEventListener("click", () => {
   render();
 });
 
+chooseDateButton.addEventListener("click", () => {
+  customDateInput.showPicker?.();
+  customDateInput.focus();
+});
+
+customDateInput.addEventListener("change", () => {
+  if (!customDateInput.value) return;
+  const selectedDate = new Date(`${customDateInput.value}T00:00:00`);
+  state.selectedTime = new Intl.DateTimeFormat("zh-TW", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(selectedDate);
+  document.querySelectorAll("[data-time]").forEach((button) => button.classList.remove("active"));
+  datePickerRow.classList.add("active");
+  render();
+});
+
 document.querySelector("#shareButton").addEventListener("click", () => {
   chatInput.focus();
 });
@@ -581,11 +1072,13 @@ chatInput.addEventListener("keydown", (event) => {
   }
 });
 
-document.querySelector("#sendStatusButton").addEventListener("click", () => {
+document.querySelector("#sendStatusButton").addEventListener("click", async () => {
   const label = statusOptions.find((option) => option.emoji === state.selectedStatus)?.label || "已回報";
   const note = statusNoteInput.value.trim();
-  currentMember().health = state.selectedStatus;
-  currentMember().note = note || `剛剛回報 ${label}`;
+  const member = currentMember();
+  member.health = state.selectedStatus;
+  member.note = note || `剛剛回報 ${label}`;
+  await updateRemoteMember(member);
   const message = `回報狀態 ${state.selectedStatus} ${label}${note ? `：${note}` : ""}`;
   addFeed(message);
   addChat(message, "checkin");
@@ -595,17 +1088,20 @@ document.querySelector("#sendStatusButton").addEventListener("click", () => {
   render();
 });
 
-document.querySelector("#addMemberButton").addEventListener("click", () => {
+document.querySelector("#addMemberButton").addEventListener("click", async () => {
   if (state.role !== "admin") return;
   const index = state.members.length + 1;
   const name = `家人${index}`;
-  state.members.push({
+  const member = {
     name,
     short: String(index),
     tone: "tone-blue",
     health: "😐",
     note: "新加入",
-  });
+    role: "member",
+  };
+  state.members.push(member);
+  await insertRemoteMember(member);
   addFeed(`新增成員：${name}`);
   markSynced();
   render();
@@ -621,27 +1117,31 @@ document.querySelector("#copyInviteButton").addEventListener("click", async () =
   }
 });
 
-document.querySelector("#simulateJoinButton").addEventListener("click", () => {
+document.querySelector("#simulateJoinButton").addEventListener("click", async () => {
   addInvitedMember();
+  await refreshRemoteSoon();
   render();
 });
 
-document.querySelector("#resetDemoButton").addEventListener("click", () => {
+document.querySelector("#resetDemoButton").addEventListener("click", async () => {
   state = structuredClone(initialState);
+  await resetRemoteDemo();
   render();
   switchScreen("today");
 });
 
-document.querySelector("#clearDemoButton").addEventListener("click", () => {
+document.querySelector("#clearDemoButton").addEventListener("click", async () => {
   clearExamples();
+  await clearRemoteExamples();
   render();
   switchScreen("today");
 });
 
-document.querySelector("#addDemoTaskButton").addEventListener("click", () => {
+document.querySelector("#addDemoTaskButton").addEventListener("click", async () => {
   const random = templates[Math.floor(Math.random() * templates.length)];
-  addTask(random.title, state.members[Math.floor(Math.random() * state.members.length)].name, "今天");
+  await addTask(random.title, state.members[Math.floor(Math.random() * state.members.length)].name, "今天");
   render();
 });
 
 render();
+initRemote().then(() => render());
