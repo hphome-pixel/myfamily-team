@@ -37,6 +37,7 @@ let pushEnabled = false;
 let pendingAvatarMemberName = null;
 let lastRemoteSignature = "";
 
+const APP_VERSION = "2026.05.22.3";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtyd3NtaHJha3BjZG1vY2Nra21mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzOTczNzksImV4cCI6MjA5NDk3MzM3OX0.y-msZ7K96ldRBgUqQUCK90SPZEM9BKaQqfKGV1WbNSs";
@@ -141,6 +142,10 @@ const soundToggleButton = document.querySelector("#soundToggleButton");
 const pushToggleButton = document.querySelector("#pushToggleButton");
 const heroModeText = document.querySelector("#heroModeText");
 const dateModeText = document.querySelector("#dateModeText");
+const versionStatusText = document.querySelector("#versionStatusText");
+const updateToast = document.querySelector("#updateToast");
+const updateToastText = document.querySelector("#updateToastText");
+const updateNowButton = document.querySelector("#updateNowButton");
 const identityStorageKey = "family-workspace-current-user";
 const soundStorageKey = "family-workspace-sound-enabled";
 const pushStorageKey = "family-workspace-push-enabled";
@@ -233,6 +238,9 @@ function renderFamilySpace() {
   inviteStatusText.textContent = `${state.members.length} 人已加入`;
   syncStatusText.textContent = remoteReady ? "Supabase 同步中" : state.backendStatus;
   familyNameText.textContent = state.familyName;
+  if (versionStatusText && !versionStatusText.dataset.updateState) {
+    versionStatusText.textContent = `目前版本 ${APP_VERSION}`;
+  }
   renderSoundToggle();
 }
 
@@ -496,6 +504,73 @@ function hideAvatarPicker() {
   pendingAvatarMemberName = null;
   avatarLayer.classList.remove("active");
   avatarLayer.setAttribute("aria-hidden", "true");
+}
+
+function showUpdateToast(version) {
+  if (!updateToast) return;
+  updateToastText.textContent = version ? `有新版本 ${version}` : "有新版本可以更新";
+  updateToast.classList.add("active");
+  updateToast.setAttribute("aria-hidden", "false");
+}
+
+function hideUpdateToast() {
+  if (!updateToast) return;
+  updateToast.classList.remove("active");
+  updateToast.setAttribute("aria-hidden", "true");
+}
+
+function setVersionStatus(text, stateName = "") {
+  if (!versionStatusText) return;
+  versionStatusText.textContent = text;
+  if (stateName) versionStatusText.dataset.updateState = stateName;
+  else delete versionStatusText.dataset.updateState;
+}
+
+async function checkForAppUpdate({ silent = false } = {}) {
+  if (!silent) setVersionStatus("正在檢查更新...", "checking");
+  try {
+    const response = await fetch(`version.json?ts=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Version check failed: ${response.status}`);
+    const data = await response.json();
+    const nextVersion = data.version;
+    if (nextVersion && nextVersion !== APP_VERSION) {
+      setVersionStatus(`有新版本 ${nextVersion}，點更新 App`, "available");
+      showUpdateToast(nextVersion);
+      return true;
+    }
+    hideUpdateToast();
+    setVersionStatus(`目前已是最新版本 ${APP_VERSION}`);
+    return false;
+  } catch (error) {
+    if (!silent) setVersionStatus("檢查更新失敗，稍後再試", "error");
+    console.warn("Version check failed", error);
+    return false;
+  }
+}
+
+async function applyAppUpdate() {
+  if (updateNowButton) {
+    updateNowButton.disabled = true;
+    updateNowButton.textContent = "更新中";
+  }
+  setVersionStatus("正在更新 App...", "updating");
+  try {
+    if ("serviceWorker" in navigator) {
+      const registration = await navigator.serviceWorker.getRegistration();
+      registration?.waiting?.postMessage({ type: "SKIP_WAITING" });
+      await registration?.update();
+    }
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((key) => caches.delete(key)));
+    }
+  } catch (error) {
+    console.warn("App update cleanup failed", error);
+  } finally {
+    const baseUrl = location.href.split("#")[0].split("?")[0];
+    const hash = location.hash || "";
+    location.replace(`${baseUrl}?v=${Date.now()}${hash}`);
+  }
 }
 
 async function useIdentity(name) {
@@ -1748,6 +1823,10 @@ document.querySelector("#addDemoTaskButton").addEventListener("click", async () 
   render();
 });
 
+document.querySelector("#checkUpdateButton").addEventListener("click", () => checkForAppUpdate());
+
+updateNowButton.addEventListener("click", applyAppUpdate);
+
 initSoundSetting();
 applySavedIdentity();
 render();
@@ -1755,8 +1834,24 @@ initRemote().then(() => render());
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("service-worker.js").catch((error) => {
-      console.warn("Service worker registration failed", error);
-    });
+    navigator.serviceWorker
+      .register("service-worker.js")
+      .then((registration) => {
+        registration.update();
+        registration.addEventListener("updatefound", () => {
+          const worker = registration.installing;
+          worker?.addEventListener("statechange", () => {
+            if (worker.state === "installed" && navigator.serviceWorker.controller) showUpdateToast();
+          });
+        });
+      })
+      .catch((error) => {
+        console.warn("Service worker registration failed", error);
+      })
+      .finally(() => {
+        checkForAppUpdate({ silent: true });
+      });
   });
+} else {
+  checkForAppUpdate({ silent: true });
 }

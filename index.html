@@ -51,6 +51,11 @@
         </section>
       </div>
 
+      <div class="update-toast" id="updateToast" aria-hidden="true">
+        <span id="updateToastText">有新版本可以更新</span>
+        <button class="primary-button" id="updateNowButton" type="button">更新</button>
+      </div>
+
       <section class="screen active" id="todayScreen" aria-label="今天">
         <section class="intro-card">
           <img class="hero-image" id="heroImage" src="assets/icons/Hero Banner/白天.png" alt="" />
@@ -246,10 +251,12 @@
             <span id="roleNote">Admin 可刪除內容</span>
           </div>
           <div class="admin-actions">
+            <button id="checkUpdateButton" type="button">檢查更新</button>
             <button id="resetDemoButton" type="button">重設示範資料</button>
             <button id="clearDemoButton" type="button">移除所有範例</button>
             <button id="addDemoTaskButton" type="button">新增隨機任務</button>
           </div>
+          <p class="version-note" id="versionStatusText">目前版本檢查中</p>
         </section>
 
         <section class="block">

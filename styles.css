@@ -191,6 +191,37 @@ h2 {
   display: flex;
 }
 
+.update-toast {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 88px;
+  z-index: 25;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 10px 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.update-toast.active {
+  display: flex;
+}
+
+.update-toast span {
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.update-toast button {
+  min-height: 42px;
+  padding: 0 16px;
+}
+
 .identity-card {
   display: grid;
   gap: 14px;
@@ -1013,6 +1044,13 @@ h2 {
   background: white;
   color: var(--ink);
   font-weight: 900;
+}
+
+.version-note {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
 }
 
 .admin-disabled {

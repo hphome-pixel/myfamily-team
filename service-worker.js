@@ -1,4 +1,4 @@
-const CACHE_NAME = "family-workspace-v2";
+const CACHE_NAME = "family-workspace-v4";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -9,6 +9,7 @@ self.addEventListener("install", (event) => {
         "styles.css",
         "app.js",
         "manifest.webmanifest",
+        "version.json",
         "assets/icons/APP/APP.png",
       ]),
     ),
@@ -28,6 +29,10 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("push", (event) => {
