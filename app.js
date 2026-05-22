@@ -32,6 +32,7 @@ let audioContext = null;
 let lastSeenMessageId = null;
 let lastSeenTaskId = null;
 let hasLoadedRemoteOnce = false;
+let pushEnabled = false;
 
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
 const SUPABASE_ANON_KEY =
@@ -117,13 +118,16 @@ const inviteStatusText = document.querySelector("#inviteStatusText");
 const syncStatusText = document.querySelector("#syncStatusText");
 const familyNameText = document.querySelector("#familyNameText");
 const soundToggleButton = document.querySelector("#soundToggleButton");
+const pushToggleButton = document.querySelector("#pushToggleButton");
 const heroModeText = document.querySelector("#heroModeText");
 const dateModeText = document.querySelector("#dateModeText");
 const identityStorageKey = "family-workspace-current-user";
 const soundStorageKey = "family-workspace-sound-enabled";
+const pushStorageKey = "family-workspace-push-enabled";
 const demoCleanupKey = "family-workspace-demo-cleaned";
 const demoMemberNames = ["Sam", "爸爸", "姐姐", "媽媽"];
 const guestMember = { name: "訪客", short: "訪", tone: "tone-blue", health: "😐", note: "" };
+const VAPID_PUBLIC_KEY = "BE7kssFjL-5QMkQk_I1l9c7hj43A2v6Q8cAAfWuPid5MP4-ewZCsut9puADBpgL6aq7NBI9s3yTQKBWFQPnVDKQ";
 
 function switchScreen(name) {
   Object.entries(screens).forEach(([screenName, screen]) => {
@@ -211,6 +215,11 @@ function renderSoundToggle() {
   if (!soundToggleButton) return;
   soundToggleButton.textContent = soundEnabled ? "提示音已開啟" : "開啟提示音";
   soundToggleButton.classList.toggle("active", soundEnabled);
+  if (!pushToggleButton) return;
+  const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  pushToggleButton.textContent = supported ? (pushEnabled ? "系統通知已開啟" : "開啟系統通知") : "此裝置不支援系統通知";
+  pushToggleButton.classList.toggle("active", pushEnabled);
+  pushToggleButton.disabled = !supported;
 }
 
 function renderIdentityOptions() {
@@ -481,7 +490,13 @@ function addChat(text, type = "normal", actor = state.currentUser || "系統") {
       .insert({ family_id: familyId, actor, text, type })
       .then(({ error }) => {
         if (error) setSyncError("Message sync failed", error);
-        else loadRemoteData();
+        else {
+          loadRemoteData();
+          if (type !== "task") {
+            const title = type === "emergency" ? "緊急求助" : "家庭新訊息";
+            sendPushNotification({ title, body: `${actor}：${text}`, type });
+          }
+        }
       });
   }
 }
@@ -511,6 +526,7 @@ async function addTask(title = state.selectedTemplate, owner = state.selectedMem
       state.tasks.unshift(fromRemoteTask(data));
       state.backendStatus = "Supabase 已連線";
       await loadRemoteData();
+      sendPushNotification({ title: "新增任務", body: `${owner}：${title}`, type: "task" });
     }
   } else {
     state.tasks.unshift(task);
@@ -532,6 +548,7 @@ function setSyncError(label, error) {
 
 function initSoundSetting() {
   soundEnabled = localStorage.getItem(soundStorageKey) === "true";
+  pushEnabled = localStorage.getItem(pushStorageKey) === "true" && Notification?.permission === "granted";
 }
 
 async function enableSound() {
@@ -579,6 +596,70 @@ function playTone(kind) {
       oscillator.stop(now + delay + duration + 0.02);
     });
   });
+}
+
+function urlBase64ToUint8Array(value) {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(base64);
+  return Uint8Array.from([...raw].map((char) => char.charCodeAt(0)));
+}
+
+async function enablePushNotifications() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+    state.backendStatus = "此裝置不支援系統通知";
+    render();
+    return;
+  }
+  if (!state.currentUser) {
+    showIdentityPicker();
+    return;
+  }
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    state.backendStatus = "系統通知未允許";
+    render();
+    return;
+  }
+  const registration = await navigator.serviceWorker.ready;
+  const subscription =
+    (await registration.pushManager.getSubscription()) ||
+    (await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    }));
+  if (remoteReady && familyId) {
+    const { error } = await supabaseClient.from("push_subscriptions").upsert(
+      {
+        endpoint: subscription.endpoint,
+        family_id: familyId,
+        member_name: state.currentUser,
+        subscription: subscription.toJSON(),
+      },
+      { onConflict: "endpoint" },
+    );
+    if (error) {
+      setSyncError("Push subscription sync failed", error);
+      render();
+      return;
+    }
+  }
+  pushEnabled = true;
+  localStorage.setItem(pushStorageKey, "true");
+  state.backendStatus = "系統通知已開啟";
+  render();
+}
+
+async function sendPushNotification(payload) {
+  if (!remoteReady || !familyId) return;
+  const { error } = await supabaseClient.functions.invoke("send-push", {
+    body: {
+      familyId,
+      excludeMember: state.currentUser,
+      ...payload,
+    },
+  });
+  if (error) console.warn("Push send failed", error);
 }
 
 function notifyRemoteChanges(messages, tasks) {
@@ -1256,6 +1337,8 @@ document.querySelector("#sosSendButton").addEventListener("click", async () => {
 roleToggle.addEventListener("click", showIdentityPicker);
 
 soundToggleButton.addEventListener("click", enableSound);
+
+pushToggleButton.addEventListener("click", enablePushNotifications);
 
 identityOptions.addEventListener("click", async (event) => {
   const identityButton = event.target.closest("[data-identity]");
