@@ -22,7 +22,7 @@ VAPID_SUBJECT=mailto:你的信箱
 
 ## 3. 部署 Edge Function
 
-部署 `supabase/functions/send-push`。
+目前 Supabase 上的 function 名稱是 `super-function`，前端會呼叫這個名稱。
 
 ## 4. 使用限制
 

@@ -652,7 +652,7 @@ async function enablePushNotifications() {
 
 async function sendPushNotification(payload) {
   if (!remoteReady || !familyId) return;
-  const { error } = await supabaseClient.functions.invoke("send-push", {
+  const { error } = await supabaseClient.functions.invoke("super-function", {
     body: {
       familyId,
       excludeMember: state.currentUser,
