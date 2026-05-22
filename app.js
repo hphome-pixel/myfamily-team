@@ -605,6 +605,14 @@ function urlBase64ToUint8Array(value) {
   return Uint8Array.from([...raw].map((char) => char.charCodeAt(0)));
 }
 
+function uint8ArrayToUrlBase64(value) {
+  return window
+    .btoa(String.fromCharCode(...new Uint8Array(value)))
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+}
+
 async function enablePushNotifications() {
   if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
     state.backendStatus = "此裝置不支援系統通知";
@@ -622,8 +630,16 @@ async function enablePushNotifications() {
     return;
   }
   const registration = await navigator.serviceWorker.ready;
-  const subscription =
-    (await registration.pushManager.getSubscription()) ||
+  let subscription = await registration.pushManager.getSubscription();
+  const existingKey = subscription?.options?.applicationServerKey
+    ? uint8ArrayToUrlBase64(subscription.options.applicationServerKey)
+    : "";
+  if (subscription && existingKey !== VAPID_PUBLIC_KEY) {
+    await subscription.unsubscribe();
+    subscription = null;
+  }
+  subscription =
+    subscription ||
     (await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
