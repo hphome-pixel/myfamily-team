@@ -142,11 +142,86 @@ h2 {
   padding: 10px 12px;
   background: var(--teal);
   color: white;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .role-chip.member {
   background: var(--soft);
   color: var(--ink);
+}
+
+.identity-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  align-items: start;
+  justify-content: center;
+  padding: 76px 18px 18px;
+  background: rgba(31, 33, 31, 0.22);
+  backdrop-filter: blur(6px);
+}
+
+.identity-layer.active {
+  display: flex;
+}
+
+.identity-card {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.identity-card p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.identity-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.identity-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffaf3;
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.identity-option.active {
+  border-color: var(--teal);
+  background: var(--teal-soft);
+}
+
+.identity-create {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.identity-create input {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
 }
 
 .screen {

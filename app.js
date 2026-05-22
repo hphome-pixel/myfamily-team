@@ -110,6 +110,10 @@ const sosConfirm = document.querySelector("#sosConfirm");
 const deleteTaskConfirm = document.querySelector("#deleteTaskConfirm");
 const deleteTaskTitle = document.querySelector("#deleteTaskTitle");
 const deleteTaskMessage = document.querySelector("#deleteTaskMessage");
+const identityLayer = document.querySelector("#identityLayer");
+const identityOptions = document.querySelector("#identityOptions");
+const identityNameInput = document.querySelector("#identityNameInput");
+const identityJoinButton = document.querySelector("#identityJoinButton");
 const chooseDateButton = document.querySelector("#chooseDateButton");
 const customDateInput = document.querySelector("#customDateInput");
 const datePickerRow = document.querySelector(".date-picker-row");
@@ -119,6 +123,7 @@ const syncStatusText = document.querySelector("#syncStatusText");
 const familyNameText = document.querySelector("#familyNameText");
 const heroModeText = document.querySelector("#heroModeText");
 const dateModeText = document.querySelector("#dateModeText");
+const identityStorageKey = "family-workspace-current-user";
 
 function switchScreen(name) {
   Object.entries(screens).forEach(([screenName, screen]) => {
@@ -140,6 +145,7 @@ function render() {
   renderCheckin();
   renderRole();
   renderFamilySpace();
+  renderIdentityOptions();
   renderTodayMeta();
   renderHeroBanner();
   selectedTemplateText.textContent = state.selectedTemplate;
@@ -198,6 +204,20 @@ function renderFamilySpace() {
   inviteStatusText.textContent = `${state.members.length} 人已加入`;
   syncStatusText.textContent = remoteReady ? "Supabase 同步中" : state.backendStatus;
   familyNameText.textContent = state.familyName;
+}
+
+function renderIdentityOptions() {
+  if (!identityOptions) return;
+  identityOptions.innerHTML = state.members
+    .map(
+      (member) => `
+        <button class="identity-option ${member.name === state.currentUser ? "active" : ""}" type="button" data-identity="${escapeHtml(member.name)}">
+          <span class="avatar ${member.tone}">${escapeHtml(member.short)}</span>
+          <span>${escapeHtml(member.name)}</span>
+        </button>
+      `,
+    )
+    .join("");
 }
 
 function renderStatusPicker() {
@@ -344,10 +364,68 @@ function chatTemplate(item) {
 }
 
 function renderRole() {
+  applyCurrentRole();
   const isAdmin = state.role === "admin";
-  roleToggle.textContent = isAdmin ? "Admin" : "成員";
+  roleToggle.textContent = state.currentUser;
   roleToggle.classList.toggle("member", !isAdmin);
   document.querySelectorAll(".admin-only").forEach((item) => item.classList.toggle("admin-disabled", !isAdmin));
+}
+
+function applyCurrentRole() {
+  const member = state.members.find((item) => item.name === state.currentUser);
+  state.role = member?.role === "admin" ? "admin" : "member";
+}
+
+function applySavedIdentity() {
+  const savedUser = localStorage.getItem(identityStorageKey);
+  if (!savedUser) return;
+  const member = state.members.find((item) => item.name === savedUser);
+  if (!member) return;
+  state.currentUser = member.name;
+  state.selectedMember = member.name;
+  applyCurrentRole();
+}
+
+function ensureIdentity() {
+  const savedUser = localStorage.getItem(identityStorageKey);
+  const hasSavedMember = savedUser && state.members.some((member) => member.name === savedUser);
+  if (!hasSavedMember) showIdentityPicker();
+}
+
+function showIdentityPicker() {
+  renderIdentityOptions();
+  identityLayer.classList.add("active");
+  identityLayer.setAttribute("aria-hidden", "false");
+}
+
+function hideIdentityPicker() {
+  identityLayer.classList.remove("active");
+  identityLayer.setAttribute("aria-hidden", "true");
+}
+
+async function useIdentity(name) {
+  const cleanName = name.trim();
+  if (!cleanName) return;
+  let member = state.members.find((item) => item.name === cleanName);
+  if (!member) {
+    member = {
+      name: cleanName,
+      short: cleanName.slice(0, 1),
+      tone: "tone-blue",
+      health: "😐",
+      note: "已加入家庭",
+      role: "member",
+    };
+    state.members.push(member);
+    await insertRemoteMember(member);
+    addChat(`${cleanName} 已加入家庭`, "system", cleanName);
+  }
+  state.currentUser = member.name;
+  state.selectedMember = member.name;
+  localStorage.setItem(identityStorageKey, member.name);
+  applyCurrentRole();
+  hideIdentityPicker();
+  render();
 }
 
 function currentMember() {
@@ -391,7 +469,7 @@ function addChat(text, type = "normal", actor = state.currentUser) {
       .from("messages")
       .insert({ family_id: familyId, actor, text, type })
       .then(({ error }) => {
-        if (error) console.warn("Message sync failed", error);
+        if (error) setSyncError("Message sync failed", error);
       });
   }
 }
@@ -415,10 +493,11 @@ async function addTask(title = state.selectedTemplate, owner = state.selectedMem
       .select()
       .single();
     if (error) {
-      console.warn("Task sync failed", error);
+      setSyncError("Task sync failed", error);
       state.tasks.unshift(task);
     } else {
       state.tasks.unshift(fromRemoteTask(data));
+      state.backendStatus = "Supabase 已連線";
     }
   } else {
     state.tasks.unshift(task);
@@ -430,6 +509,12 @@ async function addTask(title = state.selectedTemplate, owner = state.selectedMem
 
 function markSynced() {
   state.backendStatus = "剛剛同步";
+}
+
+function setSyncError(label, error) {
+  const detail = error?.message || label;
+  state.backendStatus = `同步失敗：${detail}`;
+  console.warn(label, error);
 }
 
 function sameId(a, b) {
@@ -456,7 +541,7 @@ function fromRemoteTask(task) {
     author: task.author,
     time: task.time_label,
     dueDate: task.due_date,
-    repeat: task.repeat,
+    repeat: task.repeat || (task.time_label === "每天" ? "daily" : null),
     done: task.done,
     lastCompletedDate: task.last_completed_date,
   };
@@ -470,9 +555,7 @@ function toRemoteTask(task) {
     author: task.author,
     time_label: task.time,
     due_date: task.dueDate,
-    repeat: task.repeat,
     done: task.done,
-    last_completed_date: task.lastCompletedDate || null,
   };
 }
 
@@ -500,6 +583,8 @@ function messageToFeed(message) {
 async function initRemote() {
   if (!supabaseClient) {
     state.backendStatus = "本機模式";
+    applySavedIdentity();
+    ensureIdentity();
     return;
   }
   try {
@@ -524,8 +609,9 @@ async function initRemote() {
     await loadRemoteData();
     subscribeRemote();
   } catch (error) {
-    console.warn("Supabase init failed", error);
-    state.backendStatus = "本機模式";
+    setSyncError("Supabase init failed", error);
+    applySavedIdentity();
+    ensureIdentity();
   }
 }
 
@@ -539,8 +625,7 @@ async function loadRemoteData(shouldRender = true) {
     ]);
 
   if (membersError || tasksError || messagesError) {
-    console.warn("Remote load failed", membersError || tasksError || messagesError);
-    state.backendStatus = "同步失敗";
+    setSyncError("Remote load failed", membersError || tasksError || messagesError);
     if (shouldRender) render();
     return;
   }
@@ -553,7 +638,9 @@ async function loadRemoteData(shouldRender = true) {
   state.tasks = tasks.map(fromRemoteTask);
   state.chat = messages.map(fromRemoteMessage);
   state.feed = messages.slice(-6).reverse().map(messageToFeed);
-  state.backendStatus = "Supabase 同步中";
+  state.backendStatus = "Supabase 已連線";
+  applySavedIdentity();
+  ensureIdentity();
   if (shouldRender) render();
 }
 
@@ -578,7 +665,7 @@ async function seedRemoteMembers() {
     note: member.note,
   }));
   const { error } = await supabaseClient.from("members").insert(seedMembers);
-  if (error) console.warn("Member seed failed", error);
+  if (error) setSyncError("Member seed failed", error);
 }
 
 async function refreshRemoteSoon() {
@@ -588,8 +675,18 @@ async function refreshRemoteSoon() {
 
 async function updateRemoteTask(task) {
   if (!remoteReady || !familyId || String(task.id).startsWith("local-")) return;
-  const { error } = await supabaseClient.from("tasks").update(toRemoteTask(task)).eq("id", task.id);
-  if (error) console.warn("Task update sync failed", error);
+  const { error } = await supabaseClient
+    .from("tasks")
+    .update({
+      title: task.title,
+      owner: task.owner,
+      author: task.author,
+      time_label: task.time,
+      due_date: task.dueDate,
+      done: task.done,
+    })
+    .eq("id", task.id);
+  if (error) setSyncError("Task update sync failed", error);
 }
 
 async function updateRemoteMember(member) {
@@ -605,7 +702,7 @@ async function updateRemoteMember(member) {
     .eq("family_id", familyId)
     .eq("name", member.name);
   const { error } = await query;
-  if (error) console.warn("Member update sync failed", error);
+  if (error) setSyncError("Member update sync failed", error);
 }
 
 async function insertRemoteMember(member) {
@@ -618,13 +715,13 @@ async function insertRemoteMember(member) {
     health: member.health,
     note: member.note,
   });
-  if (error) console.warn("Member insert sync failed", error);
+  if (error) setSyncError("Member insert sync failed", error);
 }
 
 async function deleteRemoteMessage(id) {
   if (!remoteReady || !familyId || String(id).startsWith("local-")) return;
   const { error } = await supabaseClient.from("messages").delete().eq("id", id);
-  if (error) console.warn("Message delete sync failed", error);
+  if (error) setSyncError("Message delete sync failed", error);
 }
 
 async function clearRemoteExamples() {
@@ -633,7 +730,7 @@ async function clearRemoteExamples() {
     supabaseClient.from("tasks").delete().eq("family_id", familyId),
     supabaseClient.from("messages").delete().eq("family_id", familyId),
   ]);
-  if (taskError || messageError) console.warn("Remote clear failed", taskError || messageError);
+  if (taskError || messageError) setSyncError("Remote clear failed", taskError || messageError);
   await Promise.all(state.members.map(updateRemoteMember));
 }
 
@@ -644,7 +741,7 @@ async function resetRemoteDemo() {
     supabaseClient.from("messages").delete().eq("family_id", familyId),
     supabaseClient.from("members").delete().eq("family_id", familyId),
   ]);
-  if (taskError || messageError || memberError) console.warn("Remote reset failed", taskError || messageError || memberError);
+  if (taskError || messageError || memberError) setSyncError("Remote reset failed", taskError || messageError || memberError);
   await seedRemoteMembers();
   await loadRemoteData(false);
 }
@@ -1013,9 +1110,21 @@ document.querySelector("#sosSendButton").addEventListener("click", async () => {
   switchScreen("chat");
 });
 
-roleToggle.addEventListener("click", () => {
-  state.role = state.role === "admin" ? "member" : "admin";
-  render();
+roleToggle.addEventListener("click", showIdentityPicker);
+
+identityOptions.addEventListener("click", async (event) => {
+  const identityButton = event.target.closest("[data-identity]");
+  if (!identityButton) return;
+  await useIdentity(identityButton.dataset.identity);
+});
+
+identityJoinButton.addEventListener("click", async () => {
+  await useIdentity(identityNameInput.value);
+  identityNameInput.value = "";
+});
+
+identityNameInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") identityJoinButton.click();
 });
 
 taskModeButton.addEventListener("click", () => {
@@ -1143,5 +1252,6 @@ document.querySelector("#addDemoTaskButton").addEventListener("click", async () 
   render();
 });
 
+applySavedIdentity();
 render();
 initRemote().then(() => render());
