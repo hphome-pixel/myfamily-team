@@ -1,11 +1,11 @@
 const initialState = {
-  familyName: "Sam 的家",
+  familyName: "家裡小隊",
   inviteCode: "FAM-8392",
   backendStatus: "已同步",
-  currentUser: "Sam",
-  role: "admin",
+  currentUser: "",
+  role: "member",
   selectedTemplate: "買菜",
-  selectedMember: "Sam",
+  selectedMember: "",
   selectedTime: "今天",
   addMode: "task",
   selectedQuestion: "今天狀況如何？",
@@ -14,22 +14,10 @@ const initialState = {
   heroMode: "auto",
   dateOffsetDays: 0,
   pendingCheckin: null,
-  members: [
-    { name: "Sam", short: "你", tone: "tone-gold", health: "😄", note: "今天值班" },
-    { name: "爸爸", short: "爸", tone: "tone-red", health: "😐", note: "還沒回報" },
-    { name: "姐姐", short: "姐", tone: "tone-teal", health: "😄", note: "已加入家庭" },
-    { name: "媽媽", short: "媽", tone: "tone-blue", health: "😐", note: "已加入家庭" },
-  ],
-  tasks: [
-    { id: 1, title: "買牛奶", owner: "姐姐", time: "今天", dueDate: null, author: "Sam", done: false },
-    { id: 2, title: "倒垃圾", owner: "Sam", time: "今天", dueDate: null, author: "Sam", done: false },
-  ],
-  feed: [
-    { id: 1, actor: "Sam", icon: "你", tone: "tone-gold", text: "新增任務：買牛奶 給姐姐", type: "normal" },
-  ],
-  chat: [
-    { id: 1, actor: "Sam", text: "這裡可以留家庭訊息，也可以把事情變成任務。", type: "normal" },
-  ],
+  members: [],
+  tasks: [],
+  feed: [],
+  chat: [],
 };
 
 let state = structuredClone(initialState);
@@ -124,6 +112,9 @@ const familyNameText = document.querySelector("#familyNameText");
 const heroModeText = document.querySelector("#heroModeText");
 const dateModeText = document.querySelector("#dateModeText");
 const identityStorageKey = "family-workspace-current-user";
+const demoCleanupKey = "family-workspace-demo-cleaned";
+const demoMemberNames = ["Sam", "爸爸", "姐姐", "媽媽"];
+const guestMember = { name: "訪客", short: "訪", tone: "tone-blue", health: "😐", note: "" };
 
 function switchScreen(name) {
   Object.entries(screens).forEach(([screenName, screen]) => {
@@ -150,7 +141,7 @@ function render() {
   renderHeroBanner();
   selectedTemplateText.textContent = state.selectedTemplate;
   selectedQuestionText.textContent = state.selectedQuestion;
-  selectedMemberText.textContent = state.selectedMember === "all" ? "大家" : state.selectedMember;
+  selectedMemberText.textContent = state.selectedMember === "all" ? "大家" : state.selectedMember || "尚未選擇";
   selectedTimeText.textContent = state.selectedTime;
   createTaskButton.textContent = state.addMode === "task" ? "建立任務" : "送出狀態詢問";
   addModeHint.textContent = state.addMode === "task" ? "新增任務" : "問狀態";
@@ -260,7 +251,8 @@ function renderQuestions() {
 }
 
 function renderMembers() {
-  memberList.innerHTML = state.members
+  memberList.innerHTML = state.members.length
+    ? state.members
     .map(
       (member) => `
         <article class="member-item">
@@ -274,9 +266,11 @@ function renderMembers() {
         </article>
       `,
     )
-    .join("");
+    .join("")
+    : emptyText("還沒有家人加入");
 
-  memberPicker.innerHTML = state.members
+  memberPicker.innerHTML = state.members.length
+    ? state.members
     .map(
       (member) => `
         <button class="avatar-button ${member.tone} ${member.name === state.selectedMember ? "active" : ""}" type="button" data-member="${escapeHtml(member.name)}">
@@ -284,7 +278,8 @@ function renderMembers() {
         </button>
       `,
     )
-    .join("");
+    .join("")
+    : emptyText("先加入家人身份");
 }
 
 function renderTasks() {
@@ -366,7 +361,7 @@ function chatTemplate(item) {
 function renderRole() {
   applyCurrentRole();
   const isAdmin = state.role === "admin";
-  roleToggle.textContent = state.currentUser;
+  roleToggle.textContent = state.currentUser || "我是誰";
   roleToggle.classList.toggle("member", !isAdmin);
   document.querySelectorAll(".admin-only").forEach((item) => item.classList.toggle("admin-disabled", !isAdmin));
 }
@@ -414,7 +409,7 @@ async function useIdentity(name) {
       tone: "tone-blue",
       health: "😐",
       note: "已加入家庭",
-      role: "member",
+      role: state.members.length ? "member" : "admin",
     };
     state.members.push(member);
     await insertRemoteMember(member);
@@ -429,22 +424,22 @@ async function useIdentity(name) {
 }
 
 function currentMember() {
-  return state.members.find((member) => member.name === state.currentUser) || state.members[0];
+  return state.members.find((member) => member.name === state.currentUser) || state.members[0] || guestMember;
 }
 
 function canDelete(author) {
-  return state.role === "admin" || author === state.currentUser;
+  return Boolean(state.currentUser) && (state.role === "admin" || author === state.currentUser);
 }
 
 function canComplete(task) {
-  return state.role === "admin" || task.owner === state.currentUser;
+  return Boolean(state.currentUser) && (state.role === "admin" || task.owner === state.currentUser);
 }
 
 function canDeleteTask(task) {
-  return state.role === "admin" || task.author === state.currentUser;
+  return Boolean(state.currentUser) && (state.role === "admin" || task.author === state.currentUser);
 }
 
-function addFeed(text, type = "normal", actor = state.currentUser) {
+function addFeed(text, type = "normal", actor = state.currentUser || "系統") {
   const member = state.members.find((item) => item.name === actor) || currentMember();
   state.feed.unshift({
     id: Date.now() + Math.random(),
@@ -456,7 +451,7 @@ function addFeed(text, type = "normal", actor = state.currentUser) {
   });
 }
 
-function addChat(text, type = "normal", actor = state.currentUser) {
+function addChat(text, type = "normal", actor = state.currentUser || "系統") {
   const localMessage = {
     id: `local-${Date.now()}-${Math.random()}`,
     actor,
@@ -630,11 +625,13 @@ async function loadRemoteData(shouldRender = true) {
     return;
   }
 
-  state.members = members.map(fromRemoteMember);
-  if (!state.members.length) {
-    await seedRemoteMembers();
+  if (shouldClearDemoData(members, tasks, messages)) {
+    await clearRemoteDemoData();
+    localStorage.setItem(demoCleanupKey, "true");
     return loadRemoteData(shouldRender);
   }
+
+  state.members = members.map(fromRemoteMember);
   state.tasks = tasks.map(fromRemoteTask);
   state.chat = messages.map(fromRemoteMessage);
   state.feed = messages.slice(-6).reverse().map(messageToFeed);
@@ -642,6 +639,25 @@ async function loadRemoteData(shouldRender = true) {
   applySavedIdentity();
   ensureIdentity();
   if (shouldRender) render();
+}
+
+function shouldClearDemoData(members, tasks, messages) {
+  if (localStorage.getItem(demoCleanupKey) === "true") return false;
+  if (!members.length) return false;
+  const onlyDemoMembers = members.every((member) => demoMemberNames.includes(member.name));
+  const onlyDemoTasks = tasks.every((task) => demoMemberNames.includes(task.owner) || demoMemberNames.includes(task.author));
+  const onlyDemoMessages = messages.every((message) => demoMemberNames.includes(message.actor) || message.actor === "系統");
+  return onlyDemoMembers && onlyDemoTasks && onlyDemoMessages;
+}
+
+async function clearRemoteDemoData() {
+  if (!remoteReady || !familyId) return;
+  const [{ error: taskError }, { error: messageError }, { error: memberError }] = await Promise.all([
+    supabaseClient.from("tasks").delete().eq("family_id", familyId),
+    supabaseClient.from("messages").delete().eq("family_id", familyId),
+    supabaseClient.from("members").delete().eq("family_id", familyId),
+  ]);
+  if (taskError || messageError || memberError) setSyncError("Demo clear failed", taskError || messageError || memberError);
 }
 
 function subscribeRemote() {
@@ -664,6 +680,7 @@ async function seedRemoteMembers() {
     health: member.health,
     note: member.note,
   }));
+  if (!seedMembers.length) return;
   const { error } = await supabaseClient.from("members").insert(seedMembers);
   if (error) setSyncError("Member seed failed", error);
 }
@@ -853,7 +870,7 @@ function addInvitedMember() {
       });
   }
   addFeed(`${nextName} 已加入 ${state.familyName}`);
-  addChat(`${nextName} 已透過邀請連結加入家庭`, "system", "Sam");
+  addChat(`${nextName} 已透過邀請連結加入家庭`, "system", "系統");
   markSynced();
 }
 
@@ -1061,8 +1078,12 @@ document.body.addEventListener("click", async (event) => {
 });
 
 createTaskButton.addEventListener("click", async () => {
+  if (!state.currentUser) {
+    showIdentityPicker();
+    return;
+  }
   if (state.addMode === "task") {
-    if (state.selectedMember === "all") state.selectedMember = state.currentUser;
+    if (state.selectedMember === "all" || !state.selectedMember) state.selectedMember = state.currentUser;
     await addTask(currentTaskTitle(), state.selectedMember, state.selectedTime);
     customTaskInput.value = "";
   } else {
@@ -1099,6 +1120,10 @@ document.querySelector("#deleteTaskConfirmButton").addEventListener("click", del
 document.querySelector("#sosSendButton").addEventListener("click", async () => {
   sosConfirm.classList.remove("active");
   sosConfirm.setAttribute("aria-hidden", "true");
+  if (!state.currentUser) {
+    showIdentityPicker();
+    return;
+  }
   const member = currentMember();
   member.health = "🚨";
   member.note = "剛剛按下緊急求助";
@@ -1166,6 +1191,10 @@ document.querySelector("#shareButton").addEventListener("click", () => {
 });
 
 document.querySelector("#sendChatButton").addEventListener("click", () => {
+  if (!state.currentUser) {
+    showIdentityPicker();
+    return;
+  }
   const text = chatInput.value.trim();
   if (!text) return;
   addFeed(`分享：${text}`);
@@ -1182,6 +1211,10 @@ chatInput.addEventListener("keydown", (event) => {
 });
 
 document.querySelector("#sendStatusButton").addEventListener("click", async () => {
+  if (!state.currentUser) {
+    showIdentityPicker();
+    return;
+  }
   const label = statusOptions.find((option) => option.emoji === state.selectedStatus)?.label || "已回報";
   const note = statusNoteInput.value.trim();
   const member = currentMember();
