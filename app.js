@@ -35,6 +35,7 @@ let lastSeenTaskId = null;
 let hasLoadedRemoteOnce = false;
 let pushEnabled = false;
 let pendingAvatarMemberName = null;
+let lastRemoteSignature = "";
 
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
 const SUPABASE_ANON_KEY =
@@ -71,6 +72,8 @@ const avatarOptions = [
   "assets/icons/Character/Character7.png",
   "assets/icons/Character/Character8.png",
 ];
+
+preloadAvatarImages();
 
 const screens = {
   today: document.querySelector("#todayScreen"),
@@ -811,6 +814,46 @@ function sameId(a, b) {
   return String(a) === String(b);
 }
 
+function preloadAvatarImages() {
+  avatarOptions.forEach((src) => {
+    const image = new Image();
+    image.src = src;
+  });
+}
+
+function remoteSignature(members, tasks, messages) {
+  return JSON.stringify({
+    members: members.map((member) => [
+      member.id,
+      member.name,
+      member.short,
+      member.role,
+      member.health,
+      member.note,
+      member.updated_at,
+    ]),
+    tasks: tasks.map((task) => [
+      task.id,
+      task.title,
+      task.owner,
+      task.author,
+      task.time_label,
+      task.due_date,
+      task.repeat,
+      task.done,
+      task.last_completed_date,
+      task.updated_at,
+    ]),
+    messages: messages.map((message) => [
+      message.id,
+      message.actor,
+      message.text,
+      message.type,
+      message.created_at,
+    ]),
+  });
+}
+
 function fromRemoteMember(member) {
   return {
     id: member.id,
@@ -953,9 +996,17 @@ async function loadRemoteData(shouldRender = true) {
       return;
     }
 
+    const nextSignature = remoteSignature(members, tasks, messages);
+    if (nextSignature === lastRemoteSignature) {
+      notifyRemoteChanges(messages, tasks);
+      return;
+    }
+    lastRemoteSignature = nextSignature;
+
     if (shouldClearDemoData(members, tasks, messages)) {
       await clearRemoteDemoData();
       localStorage.setItem(demoCleanupKey, "true");
+      lastRemoteSignature = "";
       state.members = [];
       state.tasks = [];
       state.chat = [];
@@ -1012,7 +1063,7 @@ function startAutoSync() {
   if (syncTimer) return;
   syncTimer = window.setInterval(() => {
     if (document.visibilityState === "visible") loadRemoteData(!isScreenActive("add"));
-  }, 3000);
+  }, 10000);
 }
 
 document.addEventListener("visibilitychange", () => {
