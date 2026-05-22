@@ -34,6 +34,7 @@ let lastSeenMessageId = null;
 let lastSeenTaskId = null;
 let hasLoadedRemoteOnce = false;
 let pushEnabled = false;
+let pendingAvatarMemberName = null;
 
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
 const SUPABASE_ANON_KEY =
@@ -60,7 +61,16 @@ const templates = [
 ];
 
 const questionTemplates = ["今天狀況如何？", "到家了嗎？", "吃飯了嗎？", "需要幫忙嗎？"];
-const avatarOptions = ["🙂", "👨", "👩", "👧", "👦", "👵", "👴", "🧑", "🧓", "👶"];
+const avatarOptions = [
+  "assets/icons/Character/Character1.png",
+  "assets/icons/Character/Character2.png",
+  "assets/icons/Character/Character3.png",
+  "assets/icons/Character/Character4.png",
+  "assets/icons/Character/Character5.png",
+  "assets/icons/Character/Character6.png",
+  "assets/icons/Character/Character7.png",
+  "assets/icons/Character/Character8.png",
+];
 
 const screens = {
   today: document.querySelector("#todayScreen"),
@@ -115,6 +125,8 @@ const identityLayer = document.querySelector("#identityLayer");
 const identityOptions = document.querySelector("#identityOptions");
 const identityNameInput = document.querySelector("#identityNameInput");
 const identityJoinButton = document.querySelector("#identityJoinButton");
+const avatarLayer = document.querySelector("#avatarLayer");
+const avatarChoiceGrid = document.querySelector("#avatarChoiceGrid");
 const chooseDateButton = document.querySelector("#chooseDateButton");
 const customDateInput = document.querySelector("#customDateInput");
 const datePickerRow = document.querySelector(".date-picker-row");
@@ -246,6 +258,20 @@ function renderIdentityOptions() {
     .join("");
 }
 
+function renderAvatarChoices(memberName = pendingAvatarMemberName) {
+  if (!avatarChoiceGrid) return;
+  const member = state.members.find((item) => item.name === memberName);
+  avatarChoiceGrid.innerHTML = avatarOptions
+    .map(
+      (avatar) => `
+        <button class="avatar-choice ${member?.short === avatar ? "active" : ""}" type="button" data-avatar-choice="${escapeHtml(avatar)}">
+          <img src="${escapeHtml(avatar)}" alt="" />
+        </button>
+      `,
+    )
+    .join("");
+}
+
 function renderStatusPicker() {
   statusPicker.innerHTML = statusOptions
     .map(
@@ -291,7 +317,7 @@ function renderMembers() {
     .map(
       (member) => `
         <article class="member-item">
-          ${canEditMemberAvatar(member) ? `<button class="avatar avatar-edit ${member.tone}" type="button" data-cycle-avatar="${escapeHtml(member.name)}" aria-label="更換${escapeHtml(member.name)}頭像">${escapeHtml(avatarValue(member))}</button>` : avatarMarkup(member)}
+          ${canEditMemberAvatar(member) ? editableAvatarMarkup(member) : avatarMarkup(member)}
           <div class="member-main">
             <strong>${escapeHtml(member.name)}</strong>
             <small>${escapeHtml(member.note)}</small>
@@ -309,7 +335,7 @@ function renderMembers() {
     .map(
       (member) => `
         <button class="avatar-button ${member.tone} ${member.name === state.selectedMember ? "active" : ""}" type="button" data-member="${escapeHtml(member.name)}">
-          ${escapeHtml(avatarValue(member))}
+          ${isImageAvatar(avatarValue(member)) ? `<img src="${escapeHtml(avatarValue(member))}" alt="" />` : escapeHtml(avatarValue(member))}
         </button>
       `,
     )
@@ -453,6 +479,21 @@ function hideIdentityPicker() {
   identityLayer.setAttribute("aria-hidden", "true");
 }
 
+function showAvatarPicker(memberName) {
+  const member = state.members.find((item) => item.name === memberName);
+  if (!member || !canEditMemberAvatar(member)) return;
+  pendingAvatarMemberName = member.name;
+  renderAvatarChoices(member.name);
+  avatarLayer.classList.add("active");
+  avatarLayer.setAttribute("aria-hidden", "false");
+}
+
+function hideAvatarPicker() {
+  pendingAvatarMemberName = null;
+  avatarLayer.classList.remove("active");
+  avatarLayer.setAttribute("aria-hidden", "true");
+}
+
 async function useIdentity(name) {
   const cleanName = name.trim();
   if (!cleanName) return;
@@ -499,16 +540,25 @@ function avatarValue(member) {
 }
 
 function avatarMarkup(member) {
-  return `<span class="avatar ${member.tone}">${escapeHtml(avatarValue(member))}</span>`;
+  const value = avatarValue(member);
+  if (isImageAvatar(value)) {
+    return `<span class="avatar image-avatar ${member.tone}"><img src="${escapeHtml(value)}" alt="" /></span>`;
+  }
+  return `<span class="avatar ${member.tone}">${escapeHtml(value)}</span>`;
 }
 
 function canEditMemberAvatar(member) {
   return Boolean(state.currentUser) && (state.role === "admin" || member.name === state.currentUser);
 }
 
-function nextAvatarValue(current) {
-  const index = avatarOptions.indexOf(current);
-  return avatarOptions[(index + 1) % avatarOptions.length];
+function isImageAvatar(value) {
+  return typeof value === "string" && value.startsWith("assets/");
+}
+
+function editableAvatarMarkup(member) {
+  const value = avatarValue(member);
+  const content = isImageAvatar(value) ? `<img src="${escapeHtml(value)}" alt="" />` : escapeHtml(value);
+  return `<button class="avatar avatar-edit ${isImageAvatar(value) ? "image-avatar" : ""} ${member.tone}" type="button" data-edit-avatar="${escapeHtml(member.name)}" aria-label="更換${escapeHtml(member.name)}頭像">${content}</button>`;
 }
 
 function formatChatTimestamp(value) {
@@ -1296,12 +1346,19 @@ document.body.addEventListener("click", async (event) => {
   const screenButton = event.target.closest("[data-screen]");
   if (screenButton) switchScreen(screenButton.dataset.screen);
 
-  const avatarButton = event.target.closest("[data-cycle-avatar]");
+  const avatarButton = event.target.closest("[data-edit-avatar]");
   if (avatarButton) {
-    const member = state.members.find((item) => item.name === avatarButton.dataset.cycleAvatar);
+    showAvatarPicker(avatarButton.dataset.editAvatar);
+    return;
+  }
+
+  const avatarChoice = event.target.closest("[data-avatar-choice]");
+  if (avatarChoice) {
+    const member = state.members.find((item) => item.name === pendingAvatarMemberName);
     if (!member || !canEditMemberAvatar(member)) return;
-    member.short = nextAvatarValue(avatarValue(member));
+    member.short = avatarChoice.dataset.avatarChoice;
     await updateRemoteMember(member);
+    hideAvatarPicker();
     render();
     return;
   }
@@ -1466,6 +1523,12 @@ document.querySelector("#deleteTaskConfirmButton").addEventListener("click", del
 document.querySelector("#deleteMemberCancelButton").addEventListener("click", closeDeleteMemberConfirm);
 
 document.querySelector("#deleteMemberConfirmButton").addEventListener("click", deletePendingMember);
+
+document.querySelector("#avatarCloseButton").addEventListener("click", hideAvatarPicker);
+
+avatarLayer.addEventListener("click", (event) => {
+  if (event.target === avatarLayer) hideAvatarPicker();
+});
 
 document.querySelector("#sosSendButton").addEventListener("click", async () => {
   sosConfirm.classList.remove("active");
