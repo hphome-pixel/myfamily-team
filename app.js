@@ -27,6 +27,11 @@ let remoteReady = false;
 let realtimeChannel = null;
 let syncTimer = null;
 let syncInFlight = false;
+let soundEnabled = false;
+let audioContext = null;
+let lastSeenMessageId = null;
+let lastSeenTaskId = null;
+let hasLoadedRemoteOnce = false;
 
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
 const SUPABASE_ANON_KEY =
@@ -111,9 +116,11 @@ const inviteCode = document.querySelector("#inviteCode");
 const inviteStatusText = document.querySelector("#inviteStatusText");
 const syncStatusText = document.querySelector("#syncStatusText");
 const familyNameText = document.querySelector("#familyNameText");
+const soundToggleButton = document.querySelector("#soundToggleButton");
 const heroModeText = document.querySelector("#heroModeText");
 const dateModeText = document.querySelector("#dateModeText");
 const identityStorageKey = "family-workspace-current-user";
+const soundStorageKey = "family-workspace-sound-enabled";
 const demoCleanupKey = "family-workspace-demo-cleaned";
 const demoMemberNames = ["Sam", "爸爸", "姐姐", "媽媽"];
 const guestMember = { name: "訪客", short: "訪", tone: "tone-blue", health: "😐", note: "" };
@@ -197,6 +204,13 @@ function renderFamilySpace() {
   inviteStatusText.textContent = `${state.members.length} 人已加入`;
   syncStatusText.textContent = remoteReady ? "Supabase 同步中" : state.backendStatus;
   familyNameText.textContent = state.familyName;
+  renderSoundToggle();
+}
+
+function renderSoundToggle() {
+  if (!soundToggleButton) return;
+  soundToggleButton.textContent = soundEnabled ? "提示音已開啟" : "開啟提示音";
+  soundToggleButton.classList.toggle("active", soundEnabled);
 }
 
 function renderIdentityOptions() {
@@ -516,6 +530,76 @@ function setSyncError(label, error) {
   console.warn(label, error);
 }
 
+function initSoundSetting() {
+  soundEnabled = localStorage.getItem(soundStorageKey) === "true";
+}
+
+async function enableSound() {
+  soundEnabled = !soundEnabled;
+  localStorage.setItem(soundStorageKey, String(soundEnabled));
+  if (soundEnabled) {
+    await ensureAudioContext();
+    playTone("message");
+  }
+  renderSoundToggle();
+}
+
+async function ensureAudioContext() {
+  const AudioCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtor) return null;
+  if (!audioContext) audioContext = new AudioCtor();
+  if (audioContext.state === "suspended") await audioContext.resume();
+  return audioContext;
+}
+
+function playTone(kind) {
+  if (!soundEnabled) return;
+  ensureAudioContext().then((context) => {
+    if (!context) return;
+    const now = context.currentTime;
+    const tones =
+      kind === "emergency"
+        ? [
+            [740, 0, 0.18],
+            [980, 0.2, 0.24],
+            [740, 0.46, 0.18],
+          ]
+        : [[660, 0, 0.12]];
+    tones.forEach(([frequency, delay, duration]) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = kind === "emergency" ? "square" : "sine";
+      oscillator.frequency.value = frequency;
+      gain.gain.setValueAtTime(0.0001, now + delay);
+      gain.gain.exponentialRampToValueAtTime(kind === "emergency" ? 0.08 : 0.045, now + delay + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + duration);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(now + delay);
+      oscillator.stop(now + delay + duration + 0.02);
+    });
+  });
+}
+
+function notifyRemoteChanges(messages, tasks) {
+  const newestMessage = messages.at(-1);
+  const newestTask = tasks[0];
+  if (!hasLoadedRemoteOnce) {
+    lastSeenMessageId = newestMessage?.id || null;
+    lastSeenTaskId = newestTask?.id || null;
+    hasLoadedRemoteOnce = true;
+    return;
+  }
+  if (newestMessage && newestMessage.id !== lastSeenMessageId && newestMessage.actor !== state.currentUser) {
+    playTone(newestMessage.type === "emergency" ? "emergency" : "message");
+  }
+  if (newestTask && newestTask.id !== lastSeenTaskId && newestTask.author !== state.currentUser) {
+    playTone("task");
+  }
+  lastSeenMessageId = newestMessage?.id || lastSeenMessageId;
+  lastSeenTaskId = newestTask?.id || lastSeenTaskId;
+}
+
 function sameId(a, b) {
   return String(a) === String(b);
 }
@@ -650,6 +734,7 @@ async function loadRemoteData(shouldRender = true) {
     state.feed = messages.slice(-6).reverse().map(messageToFeed);
     state.backendStatus = "Supabase 已連線";
     applySavedIdentity();
+    notifyRemoteChanges(messages, tasks);
     ensureIdentity();
     if (shouldRender) render();
   } finally {
@@ -1170,6 +1255,8 @@ document.querySelector("#sosSendButton").addEventListener("click", async () => {
 
 roleToggle.addEventListener("click", showIdentityPicker);
 
+soundToggleButton.addEventListener("click", enableSound);
+
 identityOptions.addEventListener("click", async (event) => {
   const identityButton = event.target.closest("[data-identity]");
   if (!identityButton) return;
@@ -1318,6 +1405,7 @@ document.querySelector("#addDemoTaskButton").addEventListener("click", async () 
   render();
 });
 
+initSoundSetting();
 applySavedIdentity();
 render();
 initRemote().then(() => render());

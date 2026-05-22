@@ -896,6 +896,22 @@ h2 {
   line-height: 1.45;
 }
 
+.sound-toggle {
+  width: 100%;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.sound-toggle.active {
+  border-color: var(--teal);
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
 .admin-actions button {
   min-height: 48px;
   border: 1px solid var(--line);
