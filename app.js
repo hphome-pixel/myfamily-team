@@ -60,6 +60,7 @@ const templates = [
 ];
 
 const questionTemplates = ["今天狀況如何？", "到家了嗎？", "吃飯了嗎？", "需要幫忙嗎？"];
+const avatarOptions = ["🙂", "👨", "👩", "👧", "👦", "👵", "👴", "🧑", "🧓", "👶"];
 
 const screens = {
   today: document.querySelector("#todayScreen"),
@@ -237,7 +238,7 @@ function renderIdentityOptions() {
     .map(
       (member) => `
         <button class="identity-option ${member.name === state.currentUser ? "active" : ""}" type="button" data-identity="${escapeHtml(member.name)}">
-          <span class="avatar ${member.tone}">${escapeHtml(member.short)}</span>
+          ${avatarMarkup(member)}
           <span>${escapeHtml(member.name)}</span>
         </button>
       `,
@@ -290,7 +291,7 @@ function renderMembers() {
     .map(
       (member) => `
         <article class="member-item">
-          <span class="avatar ${member.tone}">${escapeHtml(member.short)}</span>
+          ${canEditMemberAvatar(member) ? `<button class="avatar avatar-edit ${member.tone}" type="button" data-cycle-avatar="${escapeHtml(member.name)}" aria-label="更換${escapeHtml(member.name)}頭像">${escapeHtml(avatarValue(member))}</button>` : avatarMarkup(member)}
           <div class="member-main">
             <strong>${escapeHtml(member.name)}</strong>
             <small>${escapeHtml(member.note)}</small>
@@ -308,7 +309,7 @@ function renderMembers() {
     .map(
       (member) => `
         <button class="avatar-button ${member.tone} ${member.name === state.selectedMember ? "active" : ""}" type="button" data-member="${escapeHtml(member.name)}">
-          ${escapeHtml(member.short)}
+          ${escapeHtml(avatarValue(member))}
         </button>
       `,
     )
@@ -399,9 +400,9 @@ function chatTemplate(item) {
   const label = item.type === "checkin" ? "狀態詢問" : item.type === "emergency" ? "緊急" : item.type === "system" ? "系統" : "訊息";
   return `
     <article class="chat-message ${item.type === "checkin" || item.type === "system" ? "system" : ""} ${item.type === "emergency" ? "emergency" : ""}">
-      <span class="avatar ${member.tone}">${escapeHtml(member.short)}</span>
+      ${avatarMarkup(member)}
       <div class="chat-main">
-        <small>${escapeHtml(item.actor)}・${label}</small>
+        <small>${escapeHtml(item.actor)}・${label}・${formatChatTimestamp(item.createdAt)}</small>
         <p>${escapeHtml(item.text)}</p>
       </div>
       ${canDelete(item.actor) ? `<button class="delete-button" type="button" data-delete-chat="${item.id}">×</button>` : ""}
@@ -459,7 +460,7 @@ async function useIdentity(name) {
   if (!member) {
     member = {
       name: cleanName,
-      short: cleanName.slice(0, 1),
+      short: avatarOptions[state.members.length % avatarOptions.length],
       tone: "tone-blue",
       health: "😐",
       note: "已加入家庭",
@@ -493,6 +494,37 @@ function canDeleteTask(task) {
   return Boolean(state.currentUser) && (state.role === "admin" || task.author === state.currentUser);
 }
 
+function avatarValue(member) {
+  return member?.short || member?.name?.slice(0, 1) || "家";
+}
+
+function avatarMarkup(member) {
+  return `<span class="avatar ${member.tone}">${escapeHtml(avatarValue(member))}</span>`;
+}
+
+function canEditMemberAvatar(member) {
+  return Boolean(state.currentUser) && (state.role === "admin" || member.name === state.currentUser);
+}
+
+function nextAvatarValue(current) {
+  const index = avatarOptions.indexOf(current);
+  return avatarOptions[(index + 1) % avatarOptions.length];
+}
+
+function formatChatTimestamp(value) {
+  if (!value) return "剛剛";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "剛剛";
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfMessageDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const time = date.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" });
+  const dayDiff = Math.round((startOfToday - startOfMessageDay) / 86400000);
+  if (dayDiff === 0) return time;
+  if (dayDiff === 1) return `昨天 ${time}`;
+  return `${date.getMonth() + 1}/${date.getDate()} ${time}`;
+}
+
 function addFeed(text, type = "normal", actor = state.currentUser || "系統") {
   const member = state.members.find((item) => item.name === actor) || currentMember();
   state.feed.unshift({
@@ -511,6 +543,7 @@ function addChat(text, type = "normal", actor = state.currentUser || "系統") {
     actor,
     text,
     type,
+    createdAt: new Date().toISOString(),
   };
   state.chat.push(localMessage);
   if (remoteReady && familyId) {
@@ -734,7 +767,7 @@ function fromRemoteMember(member) {
   return {
     id: member.id,
     name: member.name,
-    short: member.short,
+    short: member.short || avatarOptions[0],
     tone: member.role === "admin" ? "tone-gold" : "tone-teal",
     health: member.health || "😐",
     note: member.note || "已加入家庭",
@@ -1125,7 +1158,7 @@ function addInvitedMember() {
   const nextName = invitedNames.find((name) => !state.members.some((member) => member.name === name)) || `家人${state.members.length + 1}`;
   const member = {
     name: nextName,
-    short: nextName.slice(0, 1),
+    short: avatarOptions[state.members.length % avatarOptions.length],
     tone: "tone-blue",
     health: "😐",
     note: "剛用邀請連結加入",
@@ -1262,6 +1295,16 @@ function escapeHtml(value) {
 document.body.addEventListener("click", async (event) => {
   const screenButton = event.target.closest("[data-screen]");
   if (screenButton) switchScreen(screenButton.dataset.screen);
+
+  const avatarButton = event.target.closest("[data-cycle-avatar]");
+  if (avatarButton) {
+    const member = state.members.find((item) => item.name === avatarButton.dataset.cycleAvatar);
+    if (!member || !canEditMemberAvatar(member)) return;
+    member.short = nextAvatarValue(avatarValue(member));
+    await updateRemoteMember(member);
+    render();
+    return;
+  }
 
   const screenLink = event.target.closest("[data-screen-link]");
   if (screenLink) switchScreen(screenLink.dataset.screenLink);
@@ -1547,7 +1590,7 @@ document.querySelector("#addMemberButton").addEventListener("click", async () =>
   const name = `家人${index}`;
   const member = {
     name,
-    short: String(index),
+    short: avatarOptions[(index - 1) % avatarOptions.length],
     tone: "tone-blue",
     health: "😐",
     note: "新加入",
