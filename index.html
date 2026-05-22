@@ -280,6 +280,17 @@
           </div>
         </div>
       </div>
+
+      <div class="confirm-layer" id="deleteMemberConfirm" aria-hidden="true">
+        <div class="confirm-card">
+          <strong id="deleteMemberTitle">確定移除家人？</strong>
+          <p id="deleteMemberMessage">移除後對方不會出現在家人列表，相關任務也會移除。</p>
+          <div class="confirm-actions">
+            <button class="secondary-button" id="deleteMemberCancelButton" type="button">取消</button>
+            <button class="danger-button" id="deleteMemberConfirmButton" type="button">移除</button>
+          </div>
+        </div>
+      </div>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

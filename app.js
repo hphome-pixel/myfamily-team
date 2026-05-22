@@ -22,6 +22,7 @@ const initialState = {
 
 let state = structuredClone(initialState);
 let pendingDeleteTaskId = null;
+let pendingDeleteMemberName = null;
 let familyId = null;
 let remoteReady = false;
 let realtimeChannel = null;
@@ -106,6 +107,9 @@ const sosConfirm = document.querySelector("#sosConfirm");
 const deleteTaskConfirm = document.querySelector("#deleteTaskConfirm");
 const deleteTaskTitle = document.querySelector("#deleteTaskTitle");
 const deleteTaskMessage = document.querySelector("#deleteTaskMessage");
+const deleteMemberConfirm = document.querySelector("#deleteMemberConfirm");
+const deleteMemberTitle = document.querySelector("#deleteMemberTitle");
+const deleteMemberMessage = document.querySelector("#deleteMemberMessage");
 const identityLayer = document.querySelector("#identityLayer");
 const identityOptions = document.querySelector("#identityOptions");
 const identityNameInput = document.querySelector("#identityNameInput");
@@ -347,12 +351,19 @@ function renderChat() {
 
 function renderCheckin() {
   const pending = state.pendingCheckin;
-  checkinCard.style.display = pending ? "grid" : "none";
-  if (!pending) return;
+  const canAnswerPending = pending && canAnswerCheckin(pending);
+  checkinCard.style.display = canAnswerPending ? "grid" : "none";
+  if (!canAnswerPending) return;
   const targetText = pending.target === "all" ? "大家" : pending.target;
   checkinQuestionTitle.textContent = `${pending.from} 問${targetText}`;
   checkinQuestionFrom.textContent = "待回報";
   checkinQuestionText.textContent = pending.question;
+}
+
+function canAnswerCheckin(pending) {
+  if (!state.currentUser || !pending) return false;
+  if (pending.from === state.currentUser) return false;
+  return pending.target === "all" || pending.target === state.currentUser;
 }
 
 function feedTemplate(item) {
@@ -413,6 +424,7 @@ function ensureIdentity() {
 }
 
 function showIdentityPicker() {
+  if (state.currentUser && localStorage.getItem(identityStorageKey)) return;
   renderIdentityOptions();
   identityLayer.classList.add("active");
   identityLayer.setAttribute("aria-hidden", "false");
@@ -745,6 +757,38 @@ function fromRemoteMessage(message) {
     actor: message.actor,
     text: message.text,
     type: message.type || "normal",
+    createdAt: message.created_at,
+  };
+}
+
+function derivePendingCheckin(messages) {
+  if (!state.currentUser) return null;
+  const newestOwnAnswer = [...messages]
+    .reverse()
+    .find((message) => message.actor === state.currentUser && message.type === "checkin" && message.text.startsWith("回報狀態"));
+  const newestQuestion = [...messages].reverse().find((message) => {
+    if (message.actor === state.currentUser || message.type !== "checkin") return false;
+    const parsed = parseCheckinQuestion(message);
+    if (!parsed) return false;
+    if (newestOwnAnswer && message.created_at <= newestOwnAnswer.created_at) return false;
+    return parsed.target === "all" || parsed.target === state.currentUser;
+  });
+  if (!newestQuestion) return null;
+  const parsed = parseCheckinQuestion(newestQuestion);
+  return {
+    from: newestQuestion.actor,
+    target: parsed.target,
+    question: parsed.question,
+    messageId: newestQuestion.id,
+  };
+}
+
+function parseCheckinQuestion(message) {
+  const match = message.text.match(/^問 (.+?)：(.+)$/);
+  if (!match) return null;
+  return {
+    target: match[1] === "大家" ? "all" : match[1],
+    question: match[2],
   };
 }
 
@@ -831,6 +875,7 @@ async function loadRemoteData(shouldRender = true) {
     state.feed = messages.slice(-6).reverse().map(messageToFeed);
     state.backendStatus = "Supabase 已連線";
     applySavedIdentity();
+    state.pendingCheckin = derivePendingCheckin(messages);
     notifyRemoteChanges(messages, tasks);
     ensureIdentity();
     if (shouldRender) render();
@@ -1119,6 +1164,41 @@ function closeDeleteTaskConfirm() {
   deleteTaskConfirm.setAttribute("aria-hidden", "true");
 }
 
+function openDeleteMemberConfirm(name) {
+  pendingDeleteMemberName = name;
+  deleteMemberTitle.textContent = `確定移除「${name}」？`;
+  deleteMemberMessage.textContent = "移除後對方會從家人列表消失，指派給他的任務也會一起移除。";
+  deleteMemberConfirm.classList.add("active");
+  deleteMemberConfirm.setAttribute("aria-hidden", "false");
+}
+
+function closeDeleteMemberConfirm() {
+  pendingDeleteMemberName = null;
+  deleteMemberConfirm.classList.remove("active");
+  deleteMemberConfirm.setAttribute("aria-hidden", "true");
+}
+
+async function deletePendingMember() {
+  const name = pendingDeleteMemberName;
+  if (!name || state.role !== "admin" || name === state.currentUser) {
+    closeDeleteMemberConfirm();
+    return;
+  }
+  state.members = state.members.filter((member) => member.name !== name);
+  state.tasks = state.tasks.filter((task) => task.owner !== name);
+  if (remoteReady && familyId) {
+    await Promise.all([
+      supabaseClient.from("members").delete().eq("family_id", familyId).eq("name", name),
+      supabaseClient.from("tasks").delete().eq("family_id", familyId).eq("owner", name),
+      supabaseClient.from("push_subscriptions").delete().eq("family_id", familyId).eq("member_name", name),
+    ]);
+  }
+  addFeed(`移除成員：${name}`);
+  markSynced();
+  closeDeleteMemberConfirm();
+  render();
+}
+
 function deletePendingTask() {
   const task = state.tasks.find((item) => sameId(item.id, pendingDeleteTaskId));
   if (!task || !canDeleteTask(task)) {
@@ -1277,17 +1357,7 @@ document.body.addEventListener("click", async (event) => {
   if (deleteMemberButton && state.role === "admin") {
     const name = deleteMemberButton.dataset.deleteMember;
     if (name !== state.currentUser) {
-      state.members = state.members.filter((member) => member.name !== name);
-      state.tasks = state.tasks.filter((task) => task.owner !== name);
-      if (remoteReady && familyId) {
-        await Promise.all([
-          supabaseClient.from("members").delete().eq("family_id", familyId).eq("name", name),
-          supabaseClient.from("tasks").delete().eq("family_id", familyId).eq("owner", name),
-        ]);
-      }
-      addFeed(`移除成員：${name}`);
-      markSynced();
-      render();
+      openDeleteMemberConfirm(name);
     }
   }
 });
@@ -1304,11 +1374,12 @@ createTaskButton.addEventListener("click", async () => {
   } else {
     const target = state.selectedMember;
     const question = currentQuestion();
-    state.pendingCheckin = {
+    const checkin = {
       from: state.currentUser,
       target,
       question,
     };
+    state.pendingCheckin = canAnswerCheckin(checkin) ? checkin : null;
     addFeed(`詢問 ${target === "all" ? "大家" : target}：${question}`);
     addChat(`問 ${target === "all" ? "大家" : target}：${question}`, "checkin");
     markSynced();
@@ -1331,6 +1402,10 @@ document.querySelector("#sosCancelButton").addEventListener("click", () => {
 document.querySelector("#deleteTaskCancelButton").addEventListener("click", closeDeleteTaskConfirm);
 
 document.querySelector("#deleteTaskConfirmButton").addEventListener("click", deletePendingTask);
+
+document.querySelector("#deleteMemberCancelButton").addEventListener("click", closeDeleteMemberConfirm);
+
+document.querySelector("#deleteMemberConfirmButton").addEventListener("click", deletePendingMember);
 
 document.querySelector("#sosSendButton").addEventListener("click", async () => {
   sosConfirm.classList.remove("active");
