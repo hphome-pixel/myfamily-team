@@ -409,9 +409,10 @@ function canAnswerCheckin(pending) {
 }
 
 function feedTemplate(item) {
+  const member = state.members.find((entry) => entry.name === item.actor) || currentMember();
   return `
     <article class="feed-item ${item.type === "emergency" ? "emergency" : ""}">
-      <span class="avatar ${item.tone}">${item.icon}</span>
+      ${avatarMarkup(member)}
       <div class="feed-main">
         <strong>${escapeHtml(item.actor)}</strong>
         <small>${escapeHtml(item.text)}</small>
@@ -576,12 +577,9 @@ function formatChatTimestamp(value) {
 }
 
 function addFeed(text, type = "normal", actor = state.currentUser || "系統") {
-  const member = state.members.find((item) => item.name === actor) || currentMember();
   state.feed.unshift({
     id: Date.now() + Math.random(),
     actor,
-    icon: member.short,
-    tone: member.tone,
     text,
     type,
   });
@@ -893,12 +891,9 @@ function parseCheckinQuestion(message) {
 }
 
 function messageToFeed(message) {
-  const member = state.members.find((item) => item.name === message.actor) || currentMember();
   return {
     id: message.id,
     actor: message.actor,
-    icon: member.short,
-    tone: member.tone,
     text: message.text,
     type: message.type === "emergency" ? "emergency" : "normal",
   };
