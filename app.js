@@ -25,6 +25,8 @@ let pendingDeleteTaskId = null;
 let familyId = null;
 let remoteReady = false;
 let realtimeChannel = null;
+let syncTimer = null;
+let syncInFlight = false;
 
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
 const SUPABASE_ANON_KEY =
@@ -465,6 +467,7 @@ function addChat(text, type = "normal", actor = state.currentUser || "系統") {
       .insert({ family_id: familyId, actor, text, type })
       .then(({ error }) => {
         if (error) setSyncError("Message sync failed", error);
+        else loadRemoteData();
       });
   }
 }
@@ -493,6 +496,7 @@ async function addTask(title = state.selectedTemplate, owner = state.selectedMem
     } else {
       state.tasks.unshift(fromRemoteTask(data));
       state.backendStatus = "Supabase 已連線";
+      await loadRemoteData();
     }
   } else {
     state.tasks.unshift(task);
@@ -603,6 +607,7 @@ async function initRemote() {
     remoteReady = true;
     await loadRemoteData();
     subscribeRemote();
+    startAutoSync();
   } catch (error) {
     setSyncError("Supabase init failed", error);
     applySavedIdentity();
@@ -612,33 +617,44 @@ async function initRemote() {
 
 async function loadRemoteData(shouldRender = true) {
   if (!remoteReady || !familyId) return;
-  const [{ data: members, error: membersError }, { data: tasks, error: tasksError }, { data: messages, error: messagesError }] =
-    await Promise.all([
-      supabaseClient.from("members").select("*").eq("family_id", familyId).order("created_at"),
-      supabaseClient.from("tasks").select("*").eq("family_id", familyId).order("created_at", { ascending: false }),
-      supabaseClient.from("messages").select("*").eq("family_id", familyId).order("created_at", { ascending: true }),
-    ]);
+  if (syncInFlight) return;
+  syncInFlight = true;
+  try {
+    const [{ data: members, error: membersError }, { data: tasks, error: tasksError }, { data: messages, error: messagesError }] =
+      await Promise.all([
+        supabaseClient.from("members").select("*").eq("family_id", familyId).order("created_at"),
+        supabaseClient.from("tasks").select("*").eq("family_id", familyId).order("created_at", { ascending: false }),
+        supabaseClient.from("messages").select("*").eq("family_id", familyId).order("created_at", { ascending: true }),
+      ]);
 
-  if (membersError || tasksError || messagesError) {
-    setSyncError("Remote load failed", membersError || tasksError || messagesError);
+    if (membersError || tasksError || messagesError) {
+      setSyncError("Remote load failed", membersError || tasksError || messagesError);
+      if (shouldRender) render();
+      return;
+    }
+
+    if (shouldClearDemoData(members, tasks, messages)) {
+      await clearRemoteDemoData();
+      localStorage.setItem(demoCleanupKey, "true");
+      state.members = [];
+      state.tasks = [];
+      state.chat = [];
+      state.feed = [];
+      if (shouldRender) render();
+      return;
+    }
+
+    state.members = members.map(fromRemoteMember);
+    state.tasks = tasks.map(fromRemoteTask);
+    state.chat = messages.map(fromRemoteMessage);
+    state.feed = messages.slice(-6).reverse().map(messageToFeed);
+    state.backendStatus = "Supabase 已連線";
+    applySavedIdentity();
+    ensureIdentity();
     if (shouldRender) render();
-    return;
+  } finally {
+    syncInFlight = false;
   }
-
-  if (shouldClearDemoData(members, tasks, messages)) {
-    await clearRemoteDemoData();
-    localStorage.setItem(demoCleanupKey, "true");
-    return loadRemoteData(shouldRender);
-  }
-
-  state.members = members.map(fromRemoteMember);
-  state.tasks = tasks.map(fromRemoteTask);
-  state.chat = messages.map(fromRemoteMessage);
-  state.feed = messages.slice(-6).reverse().map(messageToFeed);
-  state.backendStatus = "Supabase 已連線";
-  applySavedIdentity();
-  ensureIdentity();
-  if (shouldRender) render();
 }
 
 function shouldClearDemoData(members, tasks, messages) {
@@ -669,6 +685,19 @@ function subscribeRemote() {
     .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, () => loadRemoteData())
     .subscribe();
 }
+
+function startAutoSync() {
+  if (syncTimer) return;
+  syncTimer = window.setInterval(() => {
+    if (document.visibilityState === "visible") loadRemoteData();
+  }, 3000);
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") loadRemoteData();
+});
+
+window.addEventListener("focus", () => loadRemoteData());
 
 async function seedRemoteMembers() {
   if (!remoteReady || !familyId) return;
@@ -704,6 +733,7 @@ async function updateRemoteTask(task) {
     })
     .eq("id", task.id);
   if (error) setSyncError("Task update sync failed", error);
+  else await loadRemoteData(false);
 }
 
 async function updateRemoteMember(member) {
@@ -720,6 +750,7 @@ async function updateRemoteMember(member) {
     .eq("name", member.name);
   const { error } = await query;
   if (error) setSyncError("Member update sync failed", error);
+  else await loadRemoteData(false);
 }
 
 async function insertRemoteMember(member) {
@@ -733,12 +764,14 @@ async function insertRemoteMember(member) {
     note: member.note,
   });
   if (error) setSyncError("Member insert sync failed", error);
+  else await loadRemoteData(false);
 }
 
 async function deleteRemoteMessage(id) {
   if (!remoteReady || !familyId || String(id).startsWith("local-")) return;
   const { error } = await supabaseClient.from("messages").delete().eq("id", id);
   if (error) setSyncError("Message delete sync failed", error);
+  else await loadRemoteData(false);
 }
 
 async function clearRemoteExamples() {
