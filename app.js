@@ -140,6 +140,11 @@ function switchScreen(name) {
   navButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.screen === name);
   });
+  if (name === "chat") scrollChatToBottom();
+}
+
+function isScreenActive(name) {
+  return Boolean(screens[name]?.classList.contains("active"));
 }
 
 function render() {
@@ -346,7 +351,17 @@ function renderFeed() {
 
 function renderChat() {
   chatList.innerHTML = state.chat.map(chatTemplate).join("");
-  chatList.scrollTop = chatList.scrollHeight;
+  if (isScreenActive("chat")) scrollChatToBottom();
+}
+
+function scrollChatToBottom() {
+  if (!chatList) return;
+  requestAnimationFrame(() => {
+    chatList.scrollTop = chatList.scrollHeight;
+    window.setTimeout(() => {
+      chatList.scrollTop = chatList.scrollHeight;
+    }, 60);
+  });
 }
 
 function renderCheckin() {
@@ -412,8 +427,10 @@ function applySavedIdentity() {
   if (!savedUser) return;
   const member = state.members.find((item) => item.name === savedUser);
   if (!member) return;
+  const selectedMemberStillExists =
+    state.selectedMember === "all" || state.members.some((item) => item.name === state.selectedMember);
   state.currentUser = member.name;
-  state.selectedMember = member.name;
+  if (!selectedMemberStillExists) state.selectedMember = member.name;
   applyCurrentRole();
 }
 
@@ -916,15 +933,15 @@ function subscribeRemote() {
 function startAutoSync() {
   if (syncTimer) return;
   syncTimer = window.setInterval(() => {
-    if (document.visibilityState === "visible") loadRemoteData();
+    if (document.visibilityState === "visible") loadRemoteData(!isScreenActive("add"));
   }, 3000);
 }
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") loadRemoteData();
+  if (document.visibilityState === "visible") loadRemoteData(!isScreenActive("add"));
 });
 
-window.addEventListener("focus", () => loadRemoteData());
+window.addEventListener("focus", () => loadRemoteData(!isScreenActive("add")));
 
 async function seedRemoteMembers() {
   if (!remoteReady || !familyId) return;
