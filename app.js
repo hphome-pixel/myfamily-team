@@ -127,7 +127,7 @@ const pushStorageKey = "family-workspace-push-enabled";
 const demoCleanupKey = "family-workspace-demo-cleaned";
 const demoMemberNames = ["Sam", "爸爸", "姐姐", "媽媽"];
 const guestMember = { name: "訪客", short: "訪", tone: "tone-blue", health: "😐", note: "" };
-const VAPID_PUBLIC_KEY = "BE7kssFjL-5QMkQk_I1l9c7hj43A2v6Q8cAAfWuPid5MP4-ewZCsut9puADBpgL6aq7NBI9s3yTQKBWFQPnVDKQ";
+const VAPID_PUBLIC_KEY = "BIdhbPfu0Zf-pR8_NsgcDPThj8sdLCe78ZbwEF9DzxFRuf4wTPA7n07hEDn8EB6jsE5M6V0LiDSUQAyRiQZWKZo";
 
 function switchScreen(name) {
   Object.entries(screens).forEach(([screenName, screen]) => {

@@ -15,8 +15,8 @@
 到 Supabase Project Settings 或用 Supabase CLI 設定：
 
 ```text
-VAPID_PUBLIC_KEY=前端 app.js 內的 VAPID_PUBLIC_KEY
-VAPID_PRIVATE_KEY=請使用這次產生的 private key，勿放進 GitHub
+VAPID_PUBLIC_KEY=BIdhbPfu0Zf-pR8_NsgcDPThj8sdLCe78ZbwEF9DzxFRuf4wTPA7n07hEDn8EB6jsE5M6V0LiDSUQAyRiQZWKZo
+VAPID_PRIVATE_KEY=Va234ykx-3vElGeKXTm8ulFypk5Sf2wnpiPNIDXjZP8
 VAPID_SUBJECT=mailto:你的信箱
 ```
 
