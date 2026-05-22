@@ -467,7 +467,6 @@ h2 {
 .check-button.locked {
   border-color: var(--line);
   background: var(--soft);
-  color: var(--muted);
   opacity: 0.65;
 }
 

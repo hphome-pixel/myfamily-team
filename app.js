@@ -329,7 +329,7 @@ function taskTemplate(task) {
   const done = isTaskComplete(task);
   return `
     <article class="task-item ${done ? "done" : ""}">
-      <button class="check-button ${canCompleteTask ? "" : "locked"}" type="button" ${canCompleteTask ? `data-toggle-task="${task.id}"` : "disabled"} aria-label="${canCompleteTask ? "切換完成" : "只有被指派的人或 Admin 可完成"}">✓</button>
+      <button class="check-button ${canCompleteTask ? "" : "locked"}" type="button" ${canCompleteTask ? `data-toggle-task="${task.id}"` : "disabled"} aria-label="${canCompleteTask ? "切換完成" : "只有被指派的人或 Admin 可完成"}">${done ? "✓" : ""}</button>
       <div class="task-main">
         <strong>${escapeHtml(task.title)}</strong>
         <small>${escapeHtml(task.owner)}・${escapeHtml(displayTaskTime(task))}・${escapeHtml(task.author)} 建立</small>
