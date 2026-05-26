@@ -13,6 +13,7 @@ const initialState = {
   weatherMode: "auto",
   heroMode: "auto",
   dateOffsetDays: 0,
+  adminTaskFilter: "open",
   pendingCheckin: null,
   members: [],
   tasks: [],
@@ -182,6 +183,7 @@ function render() {
   renderIdentityOptions();
   renderTodayMeta();
   renderHeroBanner();
+  renderAdminTaskFilter();
   selectedTemplateText.textContent = state.selectedTemplate;
   selectedQuestionText.textContent = state.selectedQuestion;
   selectedMemberText.textContent = state.selectedMember === "all" ? "大家" : state.selectedMember || "尚未選擇";
@@ -230,6 +232,12 @@ function renderDateModeControls() {
   dateModeText.textContent = state.dateOffsetDays === 1 ? "模擬明天" : "今天";
   document.querySelectorAll("[data-date-offset]").forEach((button) => {
     button.classList.toggle("active", Number(button.dataset.dateOffset) === state.dateOffsetDays);
+  });
+}
+
+function renderAdminTaskFilter() {
+  document.querySelectorAll("[data-task-filter]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.taskFilter === state.adminTaskFilter);
   });
 }
 
@@ -363,7 +371,20 @@ function renderTasks() {
     sections.push(`<div class="task-section-label">逾期未完成</div>${overdue.map(taskTemplate).join("")}`);
   }
   todayTasks.innerHTML = sections.length ? sections.join("") : emptyText("今天沒有任務");
-  adminTasks.innerHTML = state.tasks.length ? state.tasks.map(taskTemplate).join("") : emptyText("還沒有任務");
+  const adminVisibleTasks = adminTaskList();
+  adminTasks.innerHTML = adminVisibleTasks.length ? adminVisibleTasks.map(taskTemplate).join("") : emptyText(adminEmptyTaskText());
+}
+
+function adminTaskList() {
+  if (state.adminTaskFilter === "done") return state.tasks.filter((task) => isTaskComplete(task)).slice(0, 12);
+  if (state.adminTaskFilter === "all") return state.tasks.slice(0, 30);
+  return state.tasks.filter((task) => !isTaskComplete(task));
+}
+
+function adminEmptyTaskText() {
+  if (state.adminTaskFilter === "done") return "最近沒有已完成任務";
+  if (state.adminTaskFilter === "all") return "還沒有任務";
+  return "目前沒有未完成任務";
 }
 
 function taskTemplate(task) {
@@ -394,12 +415,11 @@ function renderChat() {
 
 function scrollChatToBottom() {
   if (!chatList) return;
-  requestAnimationFrame(() => {
+  const scroll = () => {
     chatList.scrollTop = chatList.scrollHeight;
-    window.setTimeout(() => {
-      chatList.scrollTop = chatList.scrollHeight;
-    }, 60);
-  });
+  };
+  requestAnimationFrame(scroll);
+  [60, 180, 420].forEach((delay) => window.setTimeout(scroll, delay));
 }
 
 function renderCheckin() {
@@ -1540,6 +1560,12 @@ document.body.addEventListener("click", async (event) => {
   const dateModeButton = event.target.closest("[data-date-offset]");
   if (dateModeButton) {
     state.dateOffsetDays = Number(dateModeButton.dataset.dateOffset);
+    render();
+  }
+
+  const taskFilterButton = event.target.closest("[data-task-filter]");
+  if (taskFilterButton) {
+    state.adminTaskFilter = taskFilterButton.dataset.taskFilter;
     render();
   }
 

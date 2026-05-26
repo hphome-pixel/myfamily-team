@@ -114,7 +114,7 @@ h2 {
   min-width: 112px;
   height: 68px;
   padding: 6px 10px 6px 4px;
-  background: rgba(255, 253, 249, 0.55);
+  background: var(--bg);
   color: #b9332e;
   overflow: visible;
   box-shadow: 0 10px 24px rgba(42, 36, 28, 0.06);
@@ -987,6 +987,32 @@ h2 {
 
 .admin-actions {
   grid-template-columns: 1fr;
+}
+
+.data-actions {
+  margin-top: 4px;
+}
+
+.block-subtitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.block-subtitle strong {
+  font-size: 15px;
+}
+
+.block-subtitle span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.task-filter {
+  grid-template-columns: repeat(3, 1fr);
 }
 
 .invite-code {

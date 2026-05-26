@@ -210,11 +210,11 @@
       <section class="screen" id="adminScreen" aria-label="管理">
         <section class="block">
           <div class="block-title">
-            <h2>家庭空間</h2>
+            <h2>我的設定</h2>
             <span id="syncStatusText">已同步</span>
           </div>
           <div class="sync-card">
-            <strong id="familyNameText">家裡小隊</strong>
+            <strong id="familyNameText">山姆的家</strong>
             <small>資料存在後端，家人加入後會看到同一份任務、聊天和狀態詢問。</small>
           </div>
           <button class="sound-toggle" id="soundToggleButton" type="button">開啟提示音</button>
@@ -223,7 +223,32 @@
 
         <section class="block">
           <div class="block-title">
-            <h2>Banner 測試</h2>
+            <h2>家庭管理</h2>
+            <span id="roleNote">Admin 可管理</span>
+          </div>
+          <p class="helper-text">邀請、移除成員目前在「家人」頁操作。正式版會把家庭名稱、邀請碼和成員權限集中到這裡。</p>
+        </section>
+
+        <section class="block">
+          <div class="block-title">
+            <h2>資料管理</h2>
+            <span>保留 90 天</span>
+          </div>
+          <div class="admin-actions data-actions">
+            <button id="checkUpdateButton" type="button">檢查更新</button>
+            <button id="resetDemoButton" type="button">重設示範資料</button>
+            <button id="clearDemoButton" type="button">移除所有範例</button>
+          </div>
+          <p class="version-note" id="versionStatusText">目前版本檢查中</p>
+        </section>
+
+        <section class="block">
+          <div class="block-title">
+            <h2>開發測試</h2>
+            <span>之後正式版會隱藏</span>
+          </div>
+          <div class="block-subtitle">
+            <strong>Banner 測試</strong>
             <span id="heroModeText">自動 Banner</span>
           </div>
           <div class="segmented test-segmented" id="heroModePicker">
@@ -232,37 +257,28 @@
             <button type="button" data-hero-mode="night">晚上</button>
             <button type="button" data-hero-mode="rain">雨天</button>
           </div>
-        </section>
-
-        <section class="block">
-          <div class="block-title">
-            <h2>日期測試</h2>
+          <div class="block-subtitle">
+            <strong>日期測試</strong>
             <span id="dateModeText">今天</span>
           </div>
           <div class="segmented test-segmented" id="dateModePicker">
             <button class="active" type="button" data-date-offset="0">今天</button>
             <button type="button" data-date-offset="1">模擬明天</button>
           </div>
-        </section>
-
-        <section class="block">
-          <div class="block-title">
-            <h2>帳號管理</h2>
-            <span id="roleNote">Admin 可刪除內容</span>
-          </div>
           <div class="admin-actions">
-            <button id="checkUpdateButton" type="button">檢查更新</button>
-            <button id="resetDemoButton" type="button">重設示範資料</button>
-            <button id="clearDemoButton" type="button">移除所有範例</button>
             <button id="addDemoTaskButton" type="button">新增隨機任務</button>
           </div>
-          <p class="version-note" id="versionStatusText">目前版本檢查中</p>
         </section>
 
         <section class="block">
           <div class="block-title">
             <h2>任務管理</h2>
             <span>建立者或 Admin 可刪</span>
+          </div>
+          <div class="segmented task-filter" id="adminTaskFilter">
+            <button class="active" type="button" data-task-filter="open">未完成</button>
+            <button type="button" data-task-filter="done">已完成</button>
+            <button type="button" data-task-filter="all">全部</button>
           </div>
           <div class="task-list" id="adminTasks"></div>
         </section>
