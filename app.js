@@ -39,7 +39,7 @@ let pushEnabled = false;
 let pendingAvatarMemberName = null;
 let lastRemoteSignature = "";
 
-const APP_VERSION = "2026.05.26.1";
+const APP_VERSION = "2026.05.26.2";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
 const SUPABASE_ANON_KEY =
@@ -158,6 +158,8 @@ const updateToast = document.querySelector("#updateToast");
 const updateToastText = document.querySelector("#updateToastText");
 const updateNowButton = document.querySelector("#updateNowButton");
 const identityStorageKey = "family-workspace-current-user";
+const memberIdStorageKey = "family-workspace-current-member-id";
+const deviceStorageKey = "family-workspace-device-id";
 const familyIdStorageKey = "family-workspace-current-family-id";
 const familyInviteStorageKey = "family-workspace-current-invite-code";
 const soundStorageKey = "family-workspace-sound-enabled";
@@ -496,25 +498,32 @@ function renderRole() {
 }
 
 function applyCurrentRole() {
-  const member = state.members.find((item) => item.name === state.currentUser);
+  const member = currentMember();
   state.role = member?.role === "admin" ? "admin" : "member";
 }
 
 function applySavedIdentity() {
+  const savedMemberId = localStorage.getItem(memberIdStorageKey);
   const savedUser = localStorage.getItem(identityStorageKey);
-  if (!savedUser) return;
-  const member = state.members.find((item) => item.name === savedUser);
+  if (!savedMemberId && !savedUser) return;
+  const member =
+    state.members.find((item) => savedMemberId && sameId(item.id, savedMemberId)) ||
+    state.members.find((item) => item.name === savedUser);
   if (!member) return;
   const selectedMemberStillExists =
     state.selectedMember === "all" || state.members.some((item) => item.name === state.selectedMember);
   state.currentUser = member.name;
   if (!selectedMemberStillExists) state.selectedMember = member.name;
+  saveMemberSession(member);
   applyCurrentRole();
 }
 
 function ensureIdentity() {
+  const savedMemberId = localStorage.getItem(memberIdStorageKey);
   const savedUser = localStorage.getItem(identityStorageKey);
-  const hasSavedMember = savedUser && state.members.some((member) => member.name === savedUser);
+  const hasSavedMember =
+    (savedMemberId && state.members.some((member) => sameId(member.id, savedMemberId))) ||
+    (savedUser && state.members.some((member) => member.name === savedUser));
   if (!hasSavedMember) showIdentityPicker();
 }
 
@@ -575,10 +584,25 @@ function savedFamilyInviteCode() {
   return localStorage.getItem(familyInviteStorageKey) || "";
 }
 
+function currentDeviceId() {
+  let id = localStorage.getItem(deviceStorageKey);
+  if (!id) {
+    id = crypto.randomUUID ? crypto.randomUUID() : `device-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    localStorage.setItem(deviceStorageKey, id);
+  }
+  return id;
+}
+
+function saveMemberSession(member) {
+  localStorage.setItem(identityStorageKey, member.name);
+  if (member.id) localStorage.setItem(memberIdStorageKey, String(member.id));
+}
+
 function clearFamilySession() {
   localStorage.removeItem(familyIdStorageKey);
   localStorage.removeItem(familyInviteStorageKey);
   localStorage.removeItem(identityStorageKey);
+  localStorage.removeItem(memberIdStorageKey);
   localStorage.removeItem(demoCleanupKey);
   familyId = null;
   remoteReady = false;
@@ -679,6 +703,7 @@ async function applyAppUpdate() {
 async function useIdentity(name) {
   const cleanName = name.trim();
   if (!cleanName) return;
+  const deviceId = currentDeviceId();
   let member = state.members.find((item) => item.name === cleanName);
   if (!member) {
     member = {
@@ -688,21 +713,39 @@ async function useIdentity(name) {
       health: "😐",
       note: "已加入家庭",
       role: state.members.length ? "member" : "admin",
+      deviceId,
     };
     state.members.push(member);
-    await insertRemoteMember(member);
+    const savedMember = await insertRemoteMember(member);
+    if (savedMember) member = Object.assign(member, savedMember);
     addChat(`${cleanName} 已加入家庭`, "system", cleanName);
+  } else if (!member.deviceId || member.deviceId === deviceId) {
+    member.deviceId = deviceId;
+    await updateRemoteMemberDevice(member);
   }
   state.currentUser = member.name;
   state.selectedMember = member.name;
-  localStorage.setItem(identityStorageKey, member.name);
+  saveMemberSession(member);
   applyCurrentRole();
   hideIdentityPicker();
   render();
 }
 
 function currentMember() {
-  return state.members.find((member) => member.name === state.currentUser) || state.members[0] || guestMember;
+  const savedMemberId = localStorage.getItem(memberIdStorageKey);
+  return (
+    state.members.find((member) => savedMemberId && sameId(member.id, savedMemberId)) ||
+    state.members.find((member) => member.name === state.currentUser) ||
+    state.members[0] ||
+    guestMember
+  );
+}
+
+function syncCurrentMemberDevice() {
+  const member = currentMember();
+  if (!member || member === guestMember || member.deviceId) return;
+  member.deviceId = currentDeviceId();
+  updateRemoteMemberDevice(member);
 }
 
 function canDelete(author) {
@@ -1006,6 +1049,7 @@ function remoteSignature(members, tasks, messages) {
       member.name,
       member.short,
       member.role,
+      member.device_id,
       member.health,
       member.note,
       member.updated_at,
@@ -1041,6 +1085,7 @@ function fromRemoteMember(member) {
     health: member.health || "😐",
     note: member.note || "已加入家庭",
     role: member.role || "member",
+    deviceId: member.device_id || "",
   };
 }
 
@@ -1318,6 +1363,7 @@ async function loadRemoteData(shouldRender = true) {
     state.feed = messages.slice(-6).reverse().map(messageToFeed);
     state.backendStatus = "Supabase 已連線";
     applySavedIdentity();
+    syncCurrentMemberDevice();
     state.pendingCheckin = derivePendingCheckin(messages);
     notifyRemoteChanges(messages, tasks);
     ensureIdentity();
@@ -1408,33 +1454,63 @@ async function updateRemoteTask(task) {
 
 async function updateRemoteMember(member) {
   if (!remoteReady || !familyId) return;
+  const payload = {
+    health: member.health,
+    note: member.note,
+    short: member.short,
+    role: member.role || (member.name === state.currentUser ? "admin" : "member"),
+  };
+  if (member.deviceId) payload.device_id = member.deviceId;
   const query = supabaseClient
     .from("members")
-    .update({
-      health: member.health,
-      note: member.note,
-      short: member.short,
-      role: member.role || (member.name === state.currentUser ? "admin" : "member"),
-    })
+    .update(payload)
     .eq("family_id", familyId)
     .eq("name", member.name);
   const { error } = await query;
+  if (error && payload.device_id) {
+    delete payload.device_id;
+    const retry = await supabaseClient.from("members").update(payload).eq("family_id", familyId).eq("name", member.name);
+    if (retry.error) setSyncError("Member update sync failed", retry.error);
+    else await loadRemoteData(false);
+    return;
+  }
   if (error) setSyncError("Member update sync failed", error);
+  else await loadRemoteData(false);
+}
+
+async function updateRemoteMemberDevice(member) {
+  if (!remoteReady || !familyId || !member.id) return;
+  const { error } = await supabaseClient
+    .from("members")
+    .update({ device_id: member.deviceId })
+    .eq("family_id", familyId)
+    .eq("id", member.id);
+  if (error) console.warn("Member device sync failed", error);
   else await loadRemoteData(false);
 }
 
 async function insertRemoteMember(member) {
   if (!remoteReady || !familyId) return;
-  const { error } = await supabaseClient.from("members").insert({
+  const payload = {
     family_id: familyId,
     name: member.name,
     short: member.short,
     role: member.role || "member",
     health: member.health,
     note: member.note,
-  });
-  if (error) setSyncError("Member insert sync failed", error);
-  else await loadRemoteData(false);
+    device_id: member.deviceId || currentDeviceId(),
+  };
+  let result = await supabaseClient.from("members").insert(payload).select().single();
+  if (result.error && payload.device_id) {
+    delete payload.device_id;
+    result = await supabaseClient.from("members").insert(payload).select().single();
+  }
+  if (result.error) {
+    setSyncError("Member insert sync failed", result.error);
+    return null;
+  }
+  await loadRemoteData(false);
+  return fromRemoteMember(result.data);
 }
 
 async function deleteRemoteMessage(id) {
@@ -2103,6 +2179,7 @@ document.querySelector("#checkUpdateButton").addEventListener("click", () => che
 updateNowButton.addEventListener("click", applyAppUpdate);
 
 initSoundSetting();
+currentDeviceId();
 applySavedIdentity();
 render();
 initRemote().then(() => render());
