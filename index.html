@@ -41,6 +41,23 @@
         </section>
       </div>
 
+      <div class="setup-layer" id="setupLayer" aria-hidden="true">
+        <section class="setup-card">
+          <h2>開始使用家裡小隊</h2>
+          <p>建立自己的家庭，或輸入家人給你的邀請碼加入。</p>
+          <div class="setup-actions">
+            <input id="setupFamilyNameInput" type="text" placeholder="家庭名稱，例如：山姆的家" />
+            <button class="primary-button" id="createFamilyButton" type="button">建立家庭</button>
+          </div>
+          <div class="setup-divider">或</div>
+          <div class="setup-actions">
+            <input id="joinCodeInput" type="text" placeholder="輸入邀請碼，例如 FAM-8392" />
+            <button class="secondary-button" id="joinFamilyButton" type="button">加入家庭</button>
+          </div>
+          <p class="setup-status" id="setupStatusText"></p>
+        </section>
+      </div>
+
       <div class="avatar-layer" id="avatarLayer" aria-hidden="true">
         <section class="avatar-card">
           <div class="avatar-card-title">
@@ -226,7 +243,19 @@
             <h2>家庭管理</h2>
             <span id="roleNote">Admin 可管理</span>
           </div>
-          <p class="helper-text">邀請、移除成員目前在「家人」頁操作。正式版會把家庭名稱、邀請碼和成員權限集中到這裡。</p>
+          <div class="family-edit-form">
+            <label for="familyNameInput">家庭名稱</label>
+            <div class="inline-action-row">
+              <input id="familyNameInput" type="text" placeholder="家庭名稱" />
+              <button class="primary-button" id="saveFamilyNameButton" type="button">儲存</button>
+            </div>
+          </div>
+          <div class="sync-card">
+            <strong id="familyInviteText">FAM-8392</strong>
+            <small>邀請碼會連到目前這個家庭。家人加入後，只會看到這個家庭的任務和聊天。</small>
+          </div>
+          <button class="danger-outline-button" id="deleteFamilyButton" type="button">刪除目前家庭</button>
+          <p class="version-note" id="familyManageStatusText"></p>
         </section>
 
         <section class="block">
@@ -321,6 +350,17 @@
           <div class="confirm-actions">
             <button class="secondary-button" id="deleteMemberCancelButton" type="button">取消</button>
             <button class="danger-button" id="deleteMemberConfirmButton" type="button">移除</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="confirm-layer" id="deleteFamilyConfirm" aria-hidden="true">
+        <div class="confirm-card">
+          <strong>確定刪除目前家庭？</strong>
+          <p>這會刪除家人、任務、聊天紀錄和推播裝置。刪除後會回到建立 / 加入家庭畫面。</p>
+          <div class="confirm-actions">
+            <button class="secondary-button" id="deleteFamilyCancelButton" type="button">取消</button>
+            <button class="danger-button" id="deleteFamilyConfirmButton" type="button">刪除家庭</button>
           </div>
         </div>
       </div>

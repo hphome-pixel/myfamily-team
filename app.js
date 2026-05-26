@@ -24,6 +24,7 @@ const initialState = {
 let state = structuredClone(initialState);
 let pendingDeleteTaskId = null;
 let pendingDeleteMemberName = null;
+let pendingDeleteFamily = false;
 let familyId = null;
 let remoteReady = false;
 let realtimeChannel = null;
@@ -38,7 +39,8 @@ let pushEnabled = false;
 let pendingAvatarMemberName = null;
 let lastRemoteSignature = "";
 
-const APP_VERSION = "2026.05.22.3";
+const APP_VERSION = "2026.05.26.1";
+const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtyd3NtaHJha3BjZG1vY2Nra21mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzOTczNzksImV4cCI6MjA5NDk3MzM3OX0.y-msZ7K96ldRBgUqQUCK90SPZEM9BKaQqfKGV1WbNSs";
@@ -126,10 +128,15 @@ const deleteTaskMessage = document.querySelector("#deleteTaskMessage");
 const deleteMemberConfirm = document.querySelector("#deleteMemberConfirm");
 const deleteMemberTitle = document.querySelector("#deleteMemberTitle");
 const deleteMemberMessage = document.querySelector("#deleteMemberMessage");
+const deleteFamilyConfirm = document.querySelector("#deleteFamilyConfirm");
 const identityLayer = document.querySelector("#identityLayer");
 const identityOptions = document.querySelector("#identityOptions");
 const identityNameInput = document.querySelector("#identityNameInput");
 const identityJoinButton = document.querySelector("#identityJoinButton");
+const setupLayer = document.querySelector("#setupLayer");
+const setupFamilyNameInput = document.querySelector("#setupFamilyNameInput");
+const joinCodeInput = document.querySelector("#joinCodeInput");
+const setupStatusText = document.querySelector("#setupStatusText");
 const avatarLayer = document.querySelector("#avatarLayer");
 const avatarChoiceGrid = document.querySelector("#avatarChoiceGrid");
 const chooseDateButton = document.querySelector("#chooseDateButton");
@@ -139,6 +146,9 @@ const inviteCode = document.querySelector("#inviteCode");
 const inviteStatusText = document.querySelector("#inviteStatusText");
 const syncStatusText = document.querySelector("#syncStatusText");
 const familyNameText = document.querySelector("#familyNameText");
+const familyNameInput = document.querySelector("#familyNameInput");
+const familyInviteText = document.querySelector("#familyInviteText");
+const familyManageStatusText = document.querySelector("#familyManageStatusText");
 const soundToggleButton = document.querySelector("#soundToggleButton");
 const pushToggleButton = document.querySelector("#pushToggleButton");
 const heroModeText = document.querySelector("#heroModeText");
@@ -148,6 +158,8 @@ const updateToast = document.querySelector("#updateToast");
 const updateToastText = document.querySelector("#updateToastText");
 const updateNowButton = document.querySelector("#updateNowButton");
 const identityStorageKey = "family-workspace-current-user";
+const familyIdStorageKey = "family-workspace-current-family-id";
+const familyInviteStorageKey = "family-workspace-current-invite-code";
 const soundStorageKey = "family-workspace-sound-enabled";
 const pushStorageKey = "family-workspace-push-enabled";
 const demoCleanupKey = "family-workspace-demo-cleaned";
@@ -246,6 +258,13 @@ function renderFamilySpace() {
   inviteStatusText.textContent = `${state.members.length} 人已加入`;
   syncStatusText.textContent = remoteReady ? "Supabase 同步中" : state.backendStatus;
   familyNameText.textContent = state.familyName;
+  if (familyNameInput && document.activeElement !== familyNameInput) {
+    familyNameInput.value = state.familyName;
+  }
+  if (familyInviteText) familyInviteText.textContent = state.inviteCode;
+  const canManage = state.role === "admin";
+  document.querySelector("#saveFamilyNameButton").disabled = !canManage;
+  document.querySelector("#deleteFamilyButton").disabled = !canManage;
   if (versionStatusText && !versionStatusText.dataset.updateState) {
     versionStatusText.textContent = `目前版本 ${APP_VERSION}`;
   }
@@ -509,6 +528,70 @@ function showIdentityPicker() {
 function hideIdentityPicker() {
   identityLayer.classList.remove("active");
   identityLayer.setAttribute("aria-hidden", "true");
+}
+
+function showSetupPicker(message = "") {
+  if (setupStatusText) setupStatusText.textContent = message;
+  setupLayer.classList.add("active");
+  setupLayer.setAttribute("aria-hidden", "false");
+}
+
+function hideSetupPicker() {
+  setupLayer.classList.remove("active");
+  setupLayer.setAttribute("aria-hidden", "true");
+}
+
+function setSetupStatus(message) {
+  if (setupStatusText) setupStatusText.textContent = message;
+}
+
+function inviteCodeFromHash() {
+  const match = location.hash.match(/join=([^&]+)/);
+  return match ? decodeURIComponent(match[1]).trim().toUpperCase() : "";
+}
+
+function normalizeInviteCode(value) {
+  return value.trim().toUpperCase();
+}
+
+function generateInviteCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "FAM-";
+  for (let index = 0; index < 5; index += 1) {
+    code += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return code;
+}
+
+function saveFamilySession(family) {
+  familyId = family.id;
+  state.familyName = family.name;
+  state.inviteCode = family.invite_code;
+  localStorage.setItem(familyIdStorageKey, family.id);
+  localStorage.setItem(familyInviteStorageKey, family.invite_code);
+}
+
+function savedFamilyInviteCode() {
+  return localStorage.getItem(familyInviteStorageKey) || "";
+}
+
+function clearFamilySession() {
+  localStorage.removeItem(familyIdStorageKey);
+  localStorage.removeItem(familyInviteStorageKey);
+  localStorage.removeItem(identityStorageKey);
+  localStorage.removeItem(demoCleanupKey);
+  familyId = null;
+  remoteReady = false;
+  lastRemoteSignature = "";
+  state = structuredClone(initialState);
+  if (realtimeChannel) {
+    supabaseClient?.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
+  if (syncTimer) {
+    window.clearInterval(syncTimer);
+    syncTimer = null;
+  }
 }
 
 function showAvatarPicker(memberName) {
@@ -1045,24 +1128,22 @@ async function initRemote() {
     return;
   }
   try {
-    let { data: family, error: familyError } = await supabaseClient
-      .from("families")
-      .select("*")
-      .eq("invite_code", state.inviteCode)
-      .maybeSingle();
-    if (familyError) throw familyError;
-    if (!family) {
-      const created = await supabaseClient
-        .from("families")
-        .insert({ name: state.familyName, invite_code: state.inviteCode })
-        .select()
-        .single();
-      if (created.error) throw created.error;
-      family = created.data;
+    const hashInviteCode = inviteCodeFromHash();
+    const storedInviteCode = savedFamilyInviteCode();
+    const legacyUser = localStorage.getItem(identityStorageKey);
+    const inviteCode = hashInviteCode || storedInviteCode || (legacyUser ? LEGACY_INVITE_CODE : "");
+    if (!inviteCode) {
+      showSetupPicker();
+      return;
     }
-    familyId = family.id;
-    state.familyName = family.name;
+    const family = await findFamilyByInviteCode(inviteCode);
+    if (!family) {
+      showSetupPicker("找不到這個家庭，請確認邀請碼。");
+      return;
+    }
+    saveFamilySession(family);
     remoteReady = true;
+    hideSetupPicker();
     await loadRemoteData();
     subscribeRemote();
     startAutoSync();
@@ -1071,6 +1152,127 @@ async function initRemote() {
     applySavedIdentity();
     ensureIdentity();
   }
+}
+
+async function findFamilyByInviteCode(inviteCode) {
+  const { data, error } = await supabaseClient
+    .from("families")
+    .select("*")
+    .eq("invite_code", normalizeInviteCode(inviteCode))
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function createFamily() {
+  if (!supabaseClient) return;
+  const familyName = setupFamilyNameInput.value.trim() || "我的家";
+  setSetupStatus("正在建立家庭...");
+  let family = null;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const inviteCode = generateInviteCode();
+    const created = await supabaseClient
+      .from("families")
+      .insert({ name: familyName, invite_code: inviteCode })
+      .select()
+      .single();
+    if (!created.error) {
+      family = created.data;
+      break;
+    }
+  }
+  if (!family) {
+    setSetupStatus("建立失敗，請稍後再試。");
+    return;
+  }
+  await activateFamily(family);
+  showIdentityPicker();
+}
+
+async function joinFamily() {
+  if (!supabaseClient) return;
+  const inviteCode = normalizeInviteCode(joinCodeInput.value);
+  if (!inviteCode) {
+    setSetupStatus("請輸入邀請碼。");
+    return;
+  }
+  setSetupStatus("正在加入家庭...");
+  const family = await findFamilyByInviteCode(inviteCode);
+  if (!family) {
+    setSetupStatus("找不到這個家庭，請確認邀請碼。");
+    return;
+  }
+  await activateFamily(family);
+  showIdentityPicker();
+}
+
+async function activateFamily(family) {
+  saveFamilySession(family);
+  remoteReady = true;
+  lastRemoteSignature = "";
+  hideSetupPicker();
+  await loadRemoteData();
+  subscribeRemote();
+  startAutoSync();
+  render();
+}
+
+async function saveFamilyName() {
+  if (state.role !== "admin" || !remoteReady || !familyId) return;
+  const nextName = familyNameInput.value.trim();
+  if (!nextName) {
+    familyManageStatusText.textContent = "家庭名稱不能空白。";
+    return;
+  }
+  familyManageStatusText.textContent = "正在儲存...";
+  const { error } = await supabaseClient.from("families").update({ name: nextName }).eq("id", familyId);
+  if (error) {
+    familyManageStatusText.textContent = "儲存失敗，請稍後再試。";
+    setSyncError("Family name update failed", error);
+    return;
+  }
+  state.familyName = nextName;
+  familyManageStatusText.textContent = "家庭名稱已更新。";
+  render();
+}
+
+function openDeleteFamilyConfirm() {
+  if (state.role !== "admin") return;
+  pendingDeleteFamily = true;
+  deleteFamilyConfirm.classList.add("active");
+  deleteFamilyConfirm.setAttribute("aria-hidden", "false");
+}
+
+function closeDeleteFamilyConfirm() {
+  pendingDeleteFamily = false;
+  deleteFamilyConfirm.classList.remove("active");
+  deleteFamilyConfirm.setAttribute("aria-hidden", "true");
+}
+
+async function deleteCurrentFamily() {
+  if (!pendingDeleteFamily || state.role !== "admin" || !remoteReady || !familyId) {
+    closeDeleteFamilyConfirm();
+    return;
+  }
+  const deletingFamilyId = familyId;
+  closeDeleteFamilyConfirm();
+  familyManageStatusText.textContent = "正在刪除家庭...";
+  await Promise.all([
+    supabaseClient.from("push_subscriptions").delete().eq("family_id", deletingFamilyId),
+    supabaseClient.from("tasks").delete().eq("family_id", deletingFamilyId),
+    supabaseClient.from("messages").delete().eq("family_id", deletingFamilyId),
+    supabaseClient.from("members").delete().eq("family_id", deletingFamilyId),
+  ]);
+  const { error } = await supabaseClient.from("families").delete().eq("id", deletingFamilyId);
+  if (error) {
+    familyManageStatusText.textContent = "刪除失敗，請稍後再試。";
+    setSyncError("Family delete failed", error);
+    return;
+  }
+  clearFamilySession();
+  render();
+  switchScreen("today");
+  showSetupPicker("家庭已刪除，請建立或加入家庭。");
 }
 
 async function loadRemoteData(shouldRender = true) {
@@ -1671,6 +1873,10 @@ document.querySelector("#deleteMemberCancelButton").addEventListener("click", cl
 
 document.querySelector("#deleteMemberConfirmButton").addEventListener("click", deletePendingMember);
 
+document.querySelector("#deleteFamilyCancelButton").addEventListener("click", closeDeleteFamilyConfirm);
+
+document.querySelector("#deleteFamilyConfirmButton").addEventListener("click", deleteCurrentFamily);
+
 document.querySelector("#avatarCloseButton").addEventListener("click", hideAvatarPicker);
 
 avatarLayer.addEventListener("click", (event) => {
@@ -1693,6 +1899,28 @@ document.querySelector("#sosSendButton").addEventListener("click", async () => {
   markSynced();
   render();
   switchScreen("chat");
+});
+
+document.querySelector("#createFamilyButton").addEventListener("click", () => {
+  createFamily().catch((error) => {
+    console.warn("Create family failed", error);
+    setSetupStatus("建立失敗，請稍後再試。");
+  });
+});
+
+document.querySelector("#joinFamilyButton").addEventListener("click", () => {
+  joinFamily().catch((error) => {
+    console.warn("Join family failed", error);
+    setSetupStatus("加入失敗，請稍後再試。");
+  });
+});
+
+joinCodeInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") document.querySelector("#joinFamilyButton").click();
+});
+
+setupFamilyNameInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") document.querySelector("#createFamilyButton").click();
 });
 
 roleToggle.addEventListener("click", showIdentityPicker);
@@ -1830,7 +2058,15 @@ document.querySelector("#simulateJoinButton").addEventListener("click", async ()
 });
 
 document.querySelector("#resetDemoButton").addEventListener("click", async () => {
+  const activeFamily = {
+    id: familyId,
+    name: state.familyName,
+    inviteCode: state.inviteCode,
+  };
   state = structuredClone(initialState);
+  familyId = activeFamily.id;
+  state.familyName = activeFamily.name;
+  state.inviteCode = activeFamily.inviteCode;
   await resetRemoteDemo();
   render();
   switchScreen("today");
@@ -1848,6 +2084,19 @@ document.querySelector("#addDemoTaskButton").addEventListener("click", async () 
   await addTask(random.title, state.members[Math.floor(Math.random() * state.members.length)].name, "今天");
   render();
 });
+
+document.querySelector("#saveFamilyNameButton").addEventListener("click", () => {
+  saveFamilyName().catch((error) => {
+    familyManageStatusText.textContent = "儲存失敗，請稍後再試。";
+    console.warn("Family name save failed", error);
+  });
+});
+
+familyNameInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") document.querySelector("#saveFamilyNameButton").click();
+});
+
+document.querySelector("#deleteFamilyButton").addEventListener("click", openDeleteFamilyConfirm);
 
 document.querySelector("#checkUpdateButton").addEventListener("click", () => checkForAppUpdate());
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = "family-workspace-v4";
+const CACHE_NAME = "family-workspace-v5";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
