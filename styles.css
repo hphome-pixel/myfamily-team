@@ -935,6 +935,16 @@ h2 {
   align-content: end;
 }
 
+.chat-date-divider {
+  justify-self: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .chat-message {
   align-items: flex-start;
 }
@@ -1045,6 +1055,10 @@ h2 {
 
 .wide-soft-button.visible {
   display: block;
+}
+
+.is-hidden {
+  display: none !important;
 }
 
 .wide-soft-button.active {

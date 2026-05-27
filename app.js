@@ -25,6 +25,7 @@ let state = structuredClone(initialState);
 let pendingDeleteTaskId = null;
 let pendingDeleteMemberName = null;
 let pendingDeleteFamily = false;
+let pendingCleanupOldData = false;
 let familyId = null;
 let remoteReady = false;
 let realtimeChannel = null;
@@ -40,7 +41,8 @@ let pendingAvatarMemberName = null;
 let lastRemoteSignature = "";
 let pendingAdminMemberId = "";
 
-const APP_VERSION = "2026.05.27.2";
+const APP_VERSION = "2026.05.27.7";
+const gameMasterMode = new URLSearchParams(window.location.search).get("gm") === "1";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
 const SUPABASE_ANON_KEY =
@@ -141,6 +143,7 @@ const deleteMemberConfirm = document.querySelector("#deleteMemberConfirm");
 const deleteMemberTitle = document.querySelector("#deleteMemberTitle");
 const deleteMemberMessage = document.querySelector("#deleteMemberMessage");
 const deleteFamilyConfirm = document.querySelector("#deleteFamilyConfirm");
+const cleanupOldDataConfirm = document.querySelector("#cleanupOldDataConfirm");
 const identityLayer = document.querySelector("#identityLayer");
 const identityOptions = document.querySelector("#identityOptions");
 const identityNameInput = document.querySelector("#identityNameInput");
@@ -176,6 +179,13 @@ const versionStatusText = document.querySelector("#versionStatusText");
 const updateToast = document.querySelector("#updateToast");
 const updateToastText = document.querySelector("#updateToastText");
 const updateNowButton = document.querySelector("#updateNowButton");
+const familyManageBlock = document.querySelector("#familyManageBlock");
+const devTestBlock = document.querySelector("#devTestBlock");
+const adminDataTools = document.querySelectorAll(".admin-data-tool");
+const resetDemoButton = document.querySelector("#resetDemoButton");
+const clearDemoButton = document.querySelector("#clearDemoButton");
+const addDemoTaskButton = document.querySelector("#addDemoTaskButton");
+const cleanupOldDataButton = document.querySelector("#cleanupOldDataButton");
 const identityStorageKey = "family-workspace-current-user";
 const memberIdStorageKey = "family-workspace-current-member-id";
 const deviceStorageKey = "family-workspace-device-id";
@@ -287,11 +297,25 @@ function renderFamilySpace() {
   }
   if (familyInviteText) familyInviteText.textContent = state.inviteCode;
   const canManage = state.role === "admin";
+  if (familyManageBlock) familyManageBlock.classList.toggle("is-hidden", !canManage);
+  if (devTestBlock) devTestBlock.classList.toggle("is-hidden", !(gameMasterMode && canManage));
+  adminDataTools.forEach((button) => {
+    button.classList.toggle("is-hidden", !canManage);
+  });
   document.querySelector("#saveFamilyNameButton").disabled = !canManage;
   document.querySelector("#deleteFamilyButton").disabled = !canManage;
   if (versionStatusText && !versionStatusText.dataset.updateState) {
     versionStatusText.textContent = `目前版本 ${APP_VERSION}`;
   }
+  if (cleanupOldDataButton) {
+    cleanupOldDataButton.disabled = !canManage;
+    cleanupOldDataButton.title = canManage ? "清理 90 天前資料" : "只有 Admin 可以清理資料";
+  }
+  [resetDemoButton, clearDemoButton, addDemoTaskButton].forEach((button) => {
+    if (!button) return;
+    button.disabled = !canManage;
+    button.title = canManage ? "Admin 測試工具" : "只有 Admin 可以管理資料";
+  });
   renderSoundToggle();
 }
 
@@ -472,8 +496,20 @@ function renderFeed() {
 }
 
 function renderChat() {
-  chatList.innerHTML = state.chat.map(chatTemplate).join("");
+  chatList.innerHTML = chatMarkupWithDates();
   if (isScreenActive("chat")) scrollChatToBottom();
+}
+
+function chatMarkupWithDates() {
+  let lastDateKey = "";
+  return state.chat
+    .map((item) => {
+      const dateKey = chatDateKey(item.createdAt);
+      const divider = dateKey !== lastDateKey ? chatDateDivider(item.createdAt) : "";
+      lastDateKey = dateKey;
+      return `${divider}${chatTemplate(item)}`;
+    })
+    .join("");
 }
 
 function scrollChatToBottom() {
@@ -903,6 +939,27 @@ function formatChatTimestamp(value) {
   if (dayDiff === 0) return time;
   if (dayDiff === 1) return `昨天 ${time}`;
   return `${date.getMonth() + 1}/${date.getDate()} ${time}`;
+}
+
+function chatDateKey(value) {
+  const date = new Date(value || Date.now());
+  if (Number.isNaN(date.getTime())) return todayISO();
+  return localISODate(date);
+}
+
+function chatDateDivider(value) {
+  const date = new Date(value || Date.now());
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  const key = localISODate(safeDate);
+  const today = todayISO();
+  const yesterday = localISODate(addDays(currentDate(), -1));
+  const label =
+    key === today
+      ? "今天"
+      : key === yesterday
+        ? "昨天"
+        : new Intl.DateTimeFormat("zh-TW", { month: "numeric", day: "numeric", weekday: "short" }).format(safeDate);
+  return `<div class="chat-date-divider" aria-label="${escapeHtml(label)}">${escapeHtml(label)}</div>`;
 }
 
 function isMissingColumnError(error) {
@@ -1621,6 +1678,58 @@ async function deleteCurrentFamily() {
   showSetupPicker("家庭已刪除，請建立或加入家庭。");
 }
 
+function openCleanupOldDataConfirm() {
+  if (state.role !== "admin") {
+    setVersionStatus("只有 Admin 可以清理資料", "error");
+    return;
+  }
+  if (!remoteReady || !familyId) {
+    setVersionStatus("Supabase 尚未連線，稍後再試", "error");
+    return;
+  }
+  pendingCleanupOldData = true;
+  cleanupOldDataConfirm.classList.add("active");
+  cleanupOldDataConfirm.setAttribute("aria-hidden", "false");
+}
+
+function closeCleanupOldDataConfirm() {
+  pendingCleanupOldData = false;
+  cleanupOldDataConfirm.classList.remove("active");
+  cleanupOldDataConfirm.setAttribute("aria-hidden", "true");
+}
+
+async function cleanupOldData() {
+  if (!pendingCleanupOldData || state.role !== "admin" || !remoteReady || !familyId) {
+    closeCleanupOldDataConfirm();
+    return;
+  }
+  closeCleanupOldDataConfirm();
+  setVersionStatus("正在清理 90 天前資料...", "cleaning");
+  const cutoff = localISODate(addDays(currentDate(), -90));
+  const cutoffTimestamp = `${cutoff}T00:00:00`;
+  const { error: messageError } = await supabaseClient
+    .from("messages")
+    .delete()
+    .eq("family_id", familyId)
+    .lt("created_at", cutoffTimestamp);
+  const { error: taskError } = await supabaseClient
+    .from("tasks")
+    .delete()
+    .eq("family_id", familyId)
+    .eq("done", true)
+    .lt("created_at", cutoffTimestamp);
+  if (messageError || taskError) {
+    setVersionStatus("清理失敗，請稍後再試", "error");
+    setSyncError("Old data cleanup failed", messageError || taskError);
+    return;
+  }
+  state.chat = state.chat.filter((message) => chatDateKey(message.createdAt) >= cutoff);
+  state.tasks = state.tasks.filter((task) => !task.done || task.createdAt >= cutoff);
+  await loadRemoteData(false);
+  setVersionStatus("90 天前資料已清理");
+  render();
+}
+
 async function loadRemoteData(shouldRender = true) {
   if (!remoteReady || !familyId) return;
   if (syncInFlight) return;
@@ -1681,6 +1790,28 @@ function shouldClearDemoData(members, tasks, messages) {
   const onlyDemoTasks = tasks.every((task) => demoMemberNames.includes(task.owner) || demoMemberNames.includes(task.author));
   const onlyDemoMessages = messages.every((message) => demoMemberNames.includes(message.actor) || message.actor === "系統");
   return onlyDemoMembers && onlyDemoTasks && onlyDemoMessages;
+}
+
+function hasLiveFamilyData() {
+  const hasRealMember = state.members.some((member) => !demoMemberNames.includes(member.name));
+  const hasRealTask = state.tasks.some(
+    (task) => !demoMemberNames.includes(task.owner) || !demoMemberNames.includes(task.author)
+  );
+  const hasRealMessage = state.chat.some((message) => !demoMemberNames.includes(message.actor) && message.actor !== "系統");
+  return hasRealMember || hasRealTask || hasRealMessage;
+}
+
+function canRunDataTool() {
+  if (state.role === "admin") return true;
+  setVersionStatus("只有 Admin 可以管理資料", "error");
+  return false;
+}
+
+function canResetDemoData() {
+  if (!canRunDataTool()) return false;
+  if (!hasLiveFamilyData()) return true;
+  setVersionStatus("已有正式資料，沒有移除任何內容", "error");
+  return false;
 }
 
 async function clearRemoteDemoData() {
@@ -2292,6 +2423,15 @@ document.querySelector("#deleteFamilyCancelButton").addEventListener("click", cl
 
 document.querySelector("#deleteFamilyConfirmButton").addEventListener("click", deleteCurrentFamily);
 
+document.querySelector("#cleanupOldDataCancelButton").addEventListener("click", closeCleanupOldDataConfirm);
+
+document.querySelector("#cleanupOldDataConfirmButton").addEventListener("click", () => {
+  cleanupOldData().catch((error) => {
+    setVersionStatus("清理失敗，請稍後再試", "error");
+    console.warn("Old data cleanup failed", error);
+  });
+});
+
 document.querySelector("#avatarCloseButton").addEventListener("click", hideAvatarPicker);
 
 avatarLayer.addEventListener("click", (event) => {
@@ -2496,7 +2636,8 @@ document.querySelector("#simulateJoinButton").addEventListener("click", async ()
   render();
 });
 
-document.querySelector("#resetDemoButton").addEventListener("click", async () => {
+resetDemoButton.addEventListener("click", async () => {
+  if (!canResetDemoData()) return;
   const activeFamily = {
     id: familyId,
     name: state.familyName,
@@ -2511,14 +2652,18 @@ document.querySelector("#resetDemoButton").addEventListener("click", async () =>
   switchScreen("today");
 });
 
-document.querySelector("#clearDemoButton").addEventListener("click", async () => {
+clearDemoButton.addEventListener("click", async () => {
+  if (!canResetDemoData()) return;
   clearExamples();
   await clearRemoteExamples();
   render();
   switchScreen("today");
 });
 
-document.querySelector("#addDemoTaskButton").addEventListener("click", async () => {
+cleanupOldDataButton.addEventListener("click", openCleanupOldDataConfirm);
+
+addDemoTaskButton.addEventListener("click", async () => {
+  if (!canRunDataTool()) return;
   const random = templates[Math.floor(Math.random() * templates.length)];
   await addTask(random.title, state.members[Math.floor(Math.random() * state.members.length)].name, "今天");
   render();

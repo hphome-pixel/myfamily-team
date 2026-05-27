@@ -11,7 +11,7 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="assets/icons/APP/APP.png" />
     <link rel="icon" href="assets/icons/APP/APP.png" />
-    <link rel="stylesheet" href="styles.css?v=2026.05.27.2" />
+    <link rel="stylesheet" href="styles.css?v=2026.05.27.7" />
   </head>
   <body>
     <main class="phone-shell">
@@ -264,7 +264,7 @@
           <button class="sound-toggle" id="pushToggleButton" type="button">開啟系統通知</button>
         </section>
 
-        <section class="block">
+        <section class="block" id="familyManageBlock">
           <div class="block-title">
             <h2>家庭管理</h2>
             <span id="roleNote">Admin 可管理</span>
@@ -284,20 +284,21 @@
           <p class="version-note" id="familyManageStatusText"></p>
         </section>
 
-        <section class="block">
+        <section class="block" id="dataManageBlock">
           <div class="block-title">
             <h2>資料管理</h2>
             <span>保留 90 天</span>
           </div>
           <div class="admin-actions data-actions">
             <button id="checkUpdateButton" type="button">檢查更新</button>
-            <button id="resetDemoButton" type="button">重設示範資料</button>
-            <button id="clearDemoButton" type="button">移除所有範例</button>
+            <button class="admin-data-tool" id="resetDemoButton" type="button">重設示範資料</button>
+            <button class="admin-data-tool" id="clearDemoButton" type="button">移除所有範例</button>
+            <button class="admin-data-tool" id="cleanupOldDataButton" type="button">清理 90 天前資料</button>
           </div>
           <p class="version-note" id="versionStatusText">目前版本檢查中</p>
         </section>
 
-        <section class="block">
+        <section class="block" id="devTestBlock">
           <div class="block-title">
             <h2>開發測試</h2>
             <span>之後正式版會隱藏</span>
@@ -390,12 +391,23 @@
           </div>
         </div>
       </div>
+
+      <div class="confirm-layer" id="cleanupOldDataConfirm" aria-hidden="true">
+        <div class="confirm-card">
+          <strong>確定清理 90 天前資料？</strong>
+          <p>這會刪除 90 天前的聊天紀錄，以及 90 天前已完成的任務。未完成任務不會刪除。</p>
+          <div class="confirm-actions">
+            <button class="secondary-button" id="cleanupOldDataCancelButton" type="button">取消</button>
+            <button class="danger-button" id="cleanupOldDataConfirmButton" type="button">清理</button>
+          </div>
+        </div>
+      </div>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-      window.APP_ASSET_VERSION = "2026.05.27.2";
+      window.APP_ASSET_VERSION = "2026.05.27.7";
     </script>
-    <script src="app.js?v=2026.05.27.2"></script>
+    <script src="app.js?v=2026.05.27.7"></script>
   </body>
 </html>
