@@ -39,7 +39,7 @@ let pushEnabled = false;
 let pendingAvatarMemberName = null;
 let lastRemoteSignature = "";
 
-const APP_VERSION = "2026.05.26.3";
+const APP_VERSION = "2026.05.27.1";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
 const SUPABASE_ANON_KEY =
@@ -424,12 +424,14 @@ function taskTemplate(task) {
   const canCompleteTask = canComplete(task);
   const canDeleteThisTask = canDeleteTask(task);
   const done = isTaskComplete(task);
+  const ownerName = memberDisplayName(task.ownerId, task.owner);
+  const authorName = memberDisplayName(task.authorId, task.author);
   return `
     <article class="task-item ${done ? "done" : ""}">
       <button class="check-button ${canCompleteTask ? "" : "locked"}" type="button" ${canCompleteTask ? `data-toggle-task="${task.id}"` : "disabled"} aria-label="${canCompleteTask ? "切換完成" : "只有被指派的人或 Admin 可完成"}">${done ? "✓" : ""}</button>
       <div class="task-main">
         <strong>${escapeHtml(task.title)}</strong>
-        <small>${escapeHtml(task.owner)}・${escapeHtml(displayTaskTime(task))}・${escapeHtml(task.author)} 建立</small>
+        <small>${escapeHtml(ownerName)}・${escapeHtml(displayTaskTime(task))}・${escapeHtml(authorName)} 建立</small>
       </div>
       ${canDeleteThisTask ? `<button class="delete-button" type="button" data-delete-task="${task.id}" aria-label="刪除任務">×</button>` : ""}
     </article>
@@ -477,30 +479,32 @@ function canAnswerCheckin(pending) {
 }
 
 function feedTemplate(item) {
-  const member = state.members.find((entry) => entry.name === item.actor) || currentMember();
+  const member = memberFor(item.actorId, item.actor) || currentMember();
+  const actorName = memberDisplayName(item.actorId, item.actor);
   return `
     <article class="feed-item ${item.type === "emergency" ? "emergency" : ""}">
       ${avatarMarkup(member)}
       <div class="feed-main">
-        <strong>${escapeHtml(item.actor)}</strong>
+        <strong>${escapeHtml(actorName)}</strong>
         <small>${escapeHtml(item.text)}</small>
       </div>
-      ${canDelete(item.actor) ? `<button class="delete-button" type="button" data-delete-feed="${item.id}">×</button>` : ""}
+      ${canDelete(item.actor, item.actorId) ? `<button class="delete-button" type="button" data-delete-feed="${item.id}">×</button>` : ""}
     </article>
   `;
 }
 
 function chatTemplate(item) {
-  const member = state.members.find((entry) => entry.name === item.actor) || currentMember();
+  const member = memberFor(item.actorId, item.actor) || currentMember();
+  const actorName = memberDisplayName(item.actorId, item.actor);
   const label = item.type === "checkin" ? "狀態詢問" : item.type === "emergency" ? "緊急" : item.type === "system" ? "系統" : "訊息";
   return `
     <article class="chat-message ${item.type === "checkin" || item.type === "system" ? "system" : ""} ${item.type === "emergency" ? "emergency" : ""}">
       ${avatarMarkup(member)}
       <div class="chat-main">
-        <small>${escapeHtml(item.actor)}・${label}・${formatChatTimestamp(item.createdAt)}</small>
+        <small>${escapeHtml(actorName)}・${label}・${formatChatTimestamp(item.createdAt)}</small>
         <p>${escapeHtml(item.text)}</p>
       </div>
-      ${canDelete(item.actor) ? `<button class="delete-button" type="button" data-delete-chat="${item.id}">×</button>` : ""}
+      ${canDelete(item.actor, item.actorId) ? `<button class="delete-button" type="button" data-delete-chat="${item.id}">×</button>` : ""}
     </article>
   `;
 }
@@ -757,6 +761,30 @@ function currentMember() {
   );
 }
 
+function memberFor(memberId, fallbackName = "") {
+  return (
+    state.members.find((member) => memberId && sameId(member.id, memberId)) ||
+    state.members.find((member) => fallbackName && member.name === fallbackName) ||
+    null
+  );
+}
+
+function memberDisplayName(memberId, fallbackName = "系統") {
+  return memberFor(memberId, fallbackName)?.name || fallbackName || "系統";
+}
+
+function currentMemberId() {
+  const member = currentMember();
+  return member && member !== guestMember ? member.id || "" : "";
+}
+
+function isCurrentMemberRef(name, memberId) {
+  const current = currentMember();
+  if (!state.currentUser || !current || current === guestMember) return false;
+  if (memberId && current.id) return sameId(memberId, current.id);
+  return name === state.currentUser;
+}
+
 function syncCurrentMemberDevice() {
   const member = currentMember();
   if (!member || member === guestMember || member.deviceId) return;
@@ -764,16 +792,16 @@ function syncCurrentMemberDevice() {
   updateRemoteMemberDevice(member);
 }
 
-function canDelete(author) {
-  return Boolean(state.currentUser) && (state.role === "admin" || author === state.currentUser);
+function canDelete(author, authorId = "") {
+  return Boolean(state.currentUser) && (state.role === "admin" || isCurrentMemberRef(author, authorId));
 }
 
 function canComplete(task) {
-  return Boolean(state.currentUser) && (state.role === "admin" || task.owner === state.currentUser);
+  return Boolean(state.currentUser) && (state.role === "admin" || isCurrentMemberRef(task.owner, task.ownerId));
 }
 
 function canDeleteTask(task) {
-  return Boolean(state.currentUser) && (state.role === "admin" || task.author === state.currentUser);
+  return Boolean(state.currentUser) && (state.role === "admin" || isCurrentMemberRef(task.author, task.authorId));
 }
 
 function avatarValue(member) {
@@ -816,59 +844,94 @@ function formatChatTimestamp(value) {
   return `${date.getMonth() + 1}/${date.getDate()} ${time}`;
 }
 
+function isMissingColumnError(error) {
+  const message = `${error?.message || ""} ${error?.details || ""}`;
+  return /column .* does not exist/i.test(message) || /schema cache/i.test(message);
+}
+
+function withoutIdColumns(payload, columns) {
+  const next = { ...payload };
+  columns.forEach((column) => delete next[column]);
+  return next;
+}
+
+async function insertRemoteMessage(message) {
+  const payload = toRemoteMessage(message);
+  let result = await supabaseClient.from("messages").insert(payload);
+  if (result.error && isMissingColumnError(result.error)) {
+    result = await supabaseClient.from("messages").insert(withoutIdColumns(payload, ["actor_member_id"]));
+  }
+  return result;
+}
+
+async function insertRemoteTask(task) {
+  const payload = toRemoteTask(task);
+  let result = await supabaseClient.from("tasks").insert(payload).select().single();
+  if (result.error && isMissingColumnError(result.error)) {
+    result = await supabaseClient
+      .from("tasks")
+      .insert(withoutIdColumns(payload, ["owner_member_id", "author_member_id"]))
+      .select()
+      .single();
+  }
+  return result;
+}
+
 function addFeed(text, type = "normal", actor = state.currentUser || "系統") {
+  const actorMember = memberFor("", actor);
   state.feed.unshift({
     id: Date.now() + Math.random(),
     actor,
+    actorId: actorMember?.id || (actor === state.currentUser ? currentMemberId() : ""),
     text,
     type,
   });
 }
 
 function addChat(text, type = "normal", actor = state.currentUser || "系統") {
+  const actorMember = memberFor("", actor);
+  const actorId = actorMember?.id || (actor === state.currentUser ? currentMemberId() : "");
   const localMessage = {
     id: `local-${Date.now()}-${Math.random()}`,
     actor,
+    actorId,
     text,
     type,
     createdAt: new Date().toISOString(),
   };
   state.chat.push(localMessage);
   if (remoteReady && familyId) {
-    supabaseClient
-      .from("messages")
-      .insert({ family_id: familyId, actor, text, type })
-      .then(({ error }) => {
-        if (error) setSyncError("Message sync failed", error);
-        else {
-          loadRemoteData();
-          if (type !== "task") {
-            const title = type === "emergency" ? "緊急求助" : "家庭新訊息";
-            sendPushNotification({ title, body: `${actor}：${text}`, type });
-          }
+    insertRemoteMessage({ actor, actorId, text, type }).then(({ error }) => {
+      if (error) setSyncError("Message sync failed", error);
+      else {
+        loadRemoteData();
+        if (type !== "task") {
+          const title = type === "emergency" ? "緊急求助" : "家庭新訊息";
+          sendPushNotification({ title, body: `${actor}：${text}`, type });
         }
-      });
+      }
+    });
   }
 }
 
 async function addTask(title = state.selectedTemplate, owner = state.selectedMember, time = state.selectedTime) {
   const schedule = scheduleFromTime(time);
+  const ownerMember = memberFor("", owner);
+  const authorMember = currentMember();
   const task = {
     id: `local-${Date.now()}-${Math.random()}`,
     title,
     owner,
+    ownerId: ownerMember?.id || "",
     time,
     dueDate: schedule.dueDate,
     repeat: schedule.repeat,
     author: state.currentUser,
+    authorId: authorMember?.id || "",
     done: false,
   };
   if (remoteReady && familyId) {
-    const { data, error } = await supabaseClient
-      .from("tasks")
-      .insert(toRemoteTask(task))
-      .select()
-      .single();
+    const { data, error } = await insertRemoteTask(task);
     if (error) {
       setSyncError("Task sync failed", error);
       state.tasks.unshift(task);
@@ -995,15 +1058,21 @@ async function enablePushNotifications() {
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
     }));
   if (remoteReady && familyId) {
-    const { error } = await supabaseClient.from("push_subscriptions").upsert(
-      {
-        endpoint: subscription.endpoint,
-        family_id: familyId,
-        member_name: state.currentUser,
-        subscription: subscription.toJSON(),
-      },
-      { onConflict: "endpoint" },
-    );
+    const memberId = currentMemberId();
+    const payload = {
+      endpoint: subscription.endpoint,
+      family_id: familyId,
+      member_name: state.currentUser,
+      member_id: memberId || null,
+      subscription: subscription.toJSON(),
+    };
+    let result = await supabaseClient.from("push_subscriptions").upsert(payload, { onConflict: "endpoint" });
+    if (result.error && isMissingColumnError(result.error)) {
+      result = await supabaseClient
+        .from("push_subscriptions")
+        .upsert(withoutIdColumns(payload, ["member_id"]), { onConflict: "endpoint" });
+    }
+    const { error } = result;
     if (error) {
       setSyncError("Push subscription sync failed", error);
       render();
@@ -1022,6 +1091,7 @@ async function sendPushNotification(payload) {
     body: {
       familyId,
       excludeMember: state.currentUser,
+      excludeMemberId: currentMemberId(),
       ...payload,
     },
   });
@@ -1037,10 +1107,14 @@ function notifyRemoteChanges(messages, tasks) {
     hasLoadedRemoteOnce = true;
     return;
   }
-  if (newestMessage && newestMessage.id !== lastSeenMessageId && newestMessage.actor !== state.currentUser) {
+  if (
+    newestMessage &&
+    newestMessage.id !== lastSeenMessageId &&
+    !isCurrentMemberRef(newestMessage.actor, newestMessage.actor_member_id)
+  ) {
     playTone(newestMessage.type === "emergency" ? "emergency" : "message");
   }
-  if (newestTask && newestTask.id !== lastSeenTaskId && newestTask.author !== state.currentUser) {
+  if (newestTask && newestTask.id !== lastSeenTaskId && !isCurrentMemberRef(newestTask.author, newestTask.author_member_id)) {
     playTone("task");
   }
   lastSeenMessageId = newestMessage?.id || lastSeenMessageId;
@@ -1074,7 +1148,9 @@ function remoteSignature(members, tasks, messages) {
       task.id,
       task.title,
       task.owner,
+      task.owner_member_id,
       task.author,
+      task.author_member_id,
       task.time_label,
       task.due_date,
       task.repeat,
@@ -1085,6 +1161,7 @@ function remoteSignature(members, tasks, messages) {
     messages: messages.map((message) => [
       message.id,
       message.actor,
+      message.actor_member_id,
       message.text,
       message.type,
       message.created_at,
@@ -1110,7 +1187,9 @@ function fromRemoteTask(task) {
     id: task.id,
     title: task.title,
     owner: task.owner,
+    ownerId: task.owner_member_id || "",
     author: task.author,
+    authorId: task.author_member_id || "",
     time: task.time_label,
     dueDate: normalizeDateValue(task.due_date),
     repeat: task.repeat || (task.time_label === "每天" ? "daily" : null),
@@ -1125,7 +1204,9 @@ function toRemoteTask(task) {
     family_id: familyId,
     title: task.title,
     owner: task.owner,
+    owner_member_id: task.ownerId || null,
     author: task.author,
+    author_member_id: task.authorId || null,
     time_label: task.time,
     due_date: normalizeDateValue(task.dueDate),
     done: task.done,
@@ -1133,10 +1214,21 @@ function toRemoteTask(task) {
   };
 }
 
+function toRemoteMessage(message) {
+  return {
+    family_id: familyId,
+    actor: message.actor,
+    actor_member_id: message.actorId || null,
+    text: message.text,
+    type: message.type,
+  };
+}
+
 function fromRemoteMessage(message) {
   return {
     id: message.id,
     actor: message.actor,
+    actorId: message.actor_member_id || "",
     text: message.text,
     type: message.type || "normal",
     createdAt: message.created_at,
@@ -1145,20 +1237,26 @@ function fromRemoteMessage(message) {
 
 function derivePendingCheckin(messages) {
   if (!state.currentUser) return null;
+  const currentId = currentMemberId();
   const newestOwnAnswer = [...messages]
     .reverse()
-    .find((message) => message.actor === state.currentUser && message.type === "checkin" && message.text.startsWith("回報狀態"));
+    .find(
+      (message) =>
+        isCurrentMemberRef(message.actor, message.actor_member_id) &&
+        message.type === "checkin" &&
+        message.text.startsWith("回報狀態"),
+    );
   const newestQuestion = [...messages].reverse().find((message) => {
-    if (message.actor === state.currentUser || message.type !== "checkin") return false;
+    if (isCurrentMemberRef(message.actor, message.actor_member_id) || message.type !== "checkin") return false;
     const parsed = parseCheckinQuestion(message);
     if (!parsed) return false;
     if (newestOwnAnswer && message.created_at <= newestOwnAnswer.created_at) return false;
-    return parsed.target === "all" || parsed.target === state.currentUser;
+    return parsed.target === "all" || parsed.target === state.currentUser || (currentId && parsed.targetId === currentId);
   });
   if (!newestQuestion) return null;
   const parsed = parseCheckinQuestion(newestQuestion);
   return {
-    from: newestQuestion.actor,
+    from: memberDisplayName(newestQuestion.actor_member_id, newestQuestion.actor),
     target: parsed.target,
     question: parsed.question,
     messageId: newestQuestion.id,
@@ -1168,8 +1266,10 @@ function derivePendingCheckin(messages) {
 function parseCheckinQuestion(message) {
   const match = message.text.match(/^問 (.+?)：(.+)$/);
   if (!match) return null;
+  const targetMember = memberFor("", match[1]);
   return {
     target: match[1] === "大家" ? "all" : match[1],
+    targetId: targetMember?.id || "",
     question: match[2],
   };
 }
@@ -1178,6 +1278,7 @@ function messageToFeed(message) {
   return {
     id: message.id,
     actor: message.actor,
+    actorId: message.actor_member_id || "",
     text: message.text,
     type: message.type === "emergency" ? "emergency" : "normal",
   };
@@ -1527,18 +1628,28 @@ async function refreshRemoteSoon() {
 
 async function updateRemoteTask(task) {
   if (!remoteReady || !familyId || String(task.id).startsWith("local-")) return;
-  const { error } = await supabaseClient
+  const payload = {
+    title: task.title,
+    owner: task.owner,
+    owner_member_id: task.ownerId || null,
+    author: task.author,
+    author_member_id: task.authorId || null,
+    time_label: task.time,
+    due_date: normalizeDateValue(task.dueDate),
+    done: task.done,
+    last_completed_date: normalizeDateValue(task.lastCompletedDate) || null,
+  };
+  let result = await supabaseClient
     .from("tasks")
-    .update({
-      title: task.title,
-      owner: task.owner,
-      author: task.author,
-      time_label: task.time,
-      due_date: normalizeDateValue(task.dueDate),
-      done: task.done,
-      last_completed_date: normalizeDateValue(task.lastCompletedDate) || null,
-    })
+    .update(payload)
     .eq("id", task.id);
+  if (result.error && isMissingColumnError(result.error)) {
+    result = await supabaseClient
+      .from("tasks")
+      .update(withoutIdColumns(payload, ["owner_member_id", "author_member_id"]))
+      .eq("id", task.id);
+  }
+  const { error } = result;
   if (error) setSyncError("Task update sync failed", error);
   else await loadRemoteData(false);
 }
@@ -1808,14 +1919,22 @@ async function deletePendingMember() {
     closeDeleteMemberConfirm();
     return;
   }
-  state.members = state.members.filter((member) => member.name !== name);
-  state.tasks = state.tasks.filter((task) => task.owner !== name);
+  const member = state.members.find((item) => item.name === name);
+  const memberId = member?.id || "";
+  state.members = state.members.filter((item) => item.name !== name);
+  state.tasks = state.tasks.filter((task) => !(task.owner === name || (memberId && sameId(task.ownerId, memberId))));
   if (remoteReady && familyId) {
-    await Promise.all([
-      supabaseClient.from("members").delete().eq("family_id", familyId).eq("name", name),
-      supabaseClient.from("tasks").delete().eq("family_id", familyId).eq("owner", name),
-      supabaseClient.from("push_subscriptions").delete().eq("family_id", familyId).eq("member_name", name),
-    ]);
+    const memberQuery = supabaseClient.from("members").delete().eq("family_id", familyId);
+    const taskByName = supabaseClient.from("tasks").delete().eq("family_id", familyId).eq("owner", name);
+    const pushByName = supabaseClient.from("push_subscriptions").delete().eq("family_id", familyId).eq("member_name", name);
+    const remoteDeletes = [memberId ? memberQuery.eq("id", memberId) : memberQuery.eq("name", name), taskByName, pushByName];
+    if (memberId) {
+      remoteDeletes.push(supabaseClient.from("tasks").delete().eq("family_id", familyId).eq("owner_member_id", memberId));
+      remoteDeletes.push(supabaseClient.from("push_subscriptions").delete().eq("family_id", familyId).eq("member_id", memberId));
+    }
+    const results = await Promise.all(remoteDeletes);
+    const deleteError = results.find((result) => result.error && !isMissingColumnError(result.error))?.error;
+    if (deleteError) setSyncError("Member delete sync failed", deleteError);
   }
   addFeed(`移除成員：${name}`);
   markSynced();
@@ -1982,7 +2101,7 @@ document.body.addEventListener("click", async (event) => {
   if (deleteFeedButton) {
     const id = deleteFeedButton.dataset.deleteFeed;
     const item = state.feed.find((feed) => sameId(feed.id, id));
-    if (item && canDelete(item.actor)) {
+    if (item && canDelete(item.actor, item.actorId)) {
       state.feed = state.feed.filter((feed) => !sameId(feed.id, id));
       await deleteRemoteMessage(id);
       render();
@@ -1993,7 +2112,7 @@ document.body.addEventListener("click", async (event) => {
   if (deleteChatButton) {
     const id = deleteChatButton.dataset.deleteChat;
     const item = state.chat.find((chat) => sameId(chat.id, id));
-    if (item && canDelete(item.actor)) {
+    if (item && canDelete(item.actor, item.actorId)) {
       state.chat = state.chat.filter((chat) => !sameId(chat.id, id));
       await deleteRemoteMessage(id);
       render();

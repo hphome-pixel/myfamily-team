@@ -12,7 +12,7 @@ Deno.serve(async (request) => {
   }
 
   try {
-    const { familyId, excludeMember, title, body, type } = await request.json();
+    const { familyId, excludeMember, excludeMemberId, title, body, type } = await request.json();
     if (!familyId || !title || !body) {
       return json({ error: "Missing familyId, title, or body" }, 400);
     }
@@ -28,7 +28,8 @@ Deno.serve(async (request) => {
 
     webpush.setVapidDetails(subject, publicKey, privateKey);
     const supabase = createClient(supabaseUrl, serviceRoleKey);
-    let query = supabase.from("push_subscriptions").select("id, member_name, subscription").eq("family_id", familyId);
+    let query = supabase.from("push_subscriptions").select("id, member_name, member_id, subscription").eq("family_id", familyId);
+    if (excludeMemberId) query = query.or(`member_id.is.null,member_id.neq.${excludeMemberId}`);
     if (excludeMember) query = query.neq("member_name", excludeMember);
     const { data: subscriptions, error } = await query;
     if (error) throw error;
