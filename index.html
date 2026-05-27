@@ -11,7 +11,7 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="assets/icons/APP/APP.png" />
     <link rel="icon" href="assets/icons/APP/APP.png" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=2026.05.26.3" />
   </head>
   <body>
     <main class="phone-shell">
@@ -234,6 +234,14 @@
             <strong id="familyNameText">山姆的家</strong>
             <small>資料存在後端，家人加入後會看到同一份任務、聊天和狀態詢問。</small>
           </div>
+          <div class="family-edit-form">
+            <label for="profileNameInput">我的名字</label>
+            <div class="inline-action-row">
+              <input id="profileNameInput" type="text" placeholder="輸入你的名字" />
+              <button class="primary-button" id="saveProfileNameButton" type="button">儲存</button>
+            </div>
+          </div>
+          <p class="version-note" id="profileManageStatusText"></p>
           <button class="sound-toggle" id="soundToggleButton" type="button">開啟提示音</button>
           <button class="sound-toggle" id="pushToggleButton" type="button">開啟系統通知</button>
         </section>
@@ -367,6 +375,9 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js"></script>
+    <script>
+      window.APP_ASSET_VERSION = "2026.05.26.3";
+    </script>
+    <script src="app.js?v=2026.05.26.3"></script>
   </body>
 </html>

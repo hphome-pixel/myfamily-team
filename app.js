@@ -39,7 +39,7 @@ let pushEnabled = false;
 let pendingAvatarMemberName = null;
 let lastRemoteSignature = "";
 
-const APP_VERSION = "2026.05.26.2";
+const APP_VERSION = "2026.05.26.3";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
 const SUPABASE_ANON_KEY =
@@ -146,6 +146,8 @@ const inviteCode = document.querySelector("#inviteCode");
 const inviteStatusText = document.querySelector("#inviteStatusText");
 const syncStatusText = document.querySelector("#syncStatusText");
 const familyNameText = document.querySelector("#familyNameText");
+const profileNameInput = document.querySelector("#profileNameInput");
+const profileManageStatusText = document.querySelector("#profileManageStatusText");
 const familyNameInput = document.querySelector("#familyNameInput");
 const familyInviteText = document.querySelector("#familyInviteText");
 const familyManageStatusText = document.querySelector("#familyManageStatusText");
@@ -260,6 +262,9 @@ function renderFamilySpace() {
   inviteStatusText.textContent = `${state.members.length} 人已加入`;
   syncStatusText.textContent = remoteReady ? "Supabase 同步中" : state.backendStatus;
   familyNameText.textContent = state.familyName;
+  if (profileNameInput && document.activeElement !== profileNameInput) {
+    profileNameInput.value = state.currentUser || "";
+  }
   if (familyNameInput && document.activeElement !== familyNameInput) {
     familyNameInput.value = state.familyName;
   }
@@ -385,11 +390,18 @@ function renderMembers() {
 
 function renderTasks() {
   const today = state.tasks.filter((task) => isTaskDueToday(task));
-  const overdue = state.tasks.filter((task) => isTaskOverdue(task));
+  const overdue = state.tasks.filter((task) => isTaskOverdue(task)).sort(compareTaskDate);
+  const upcoming = state.tasks
+    .filter((task) => !isTaskComplete(task) && !isTaskDueToday(task) && !isTaskOverdue(task))
+    .sort(compareTaskDate)
+    .slice(0, 6);
   const sections = [];
   if (today.length) sections.push(today.map(taskTemplate).join(""));
   if (overdue.length) {
     sections.push(`<div class="task-section-label">逾期未完成</div>${overdue.map(taskTemplate).join("")}`);
+  }
+  if (upcoming.length) {
+    sections.push(`<div class="task-section-label">即將到來</div>${upcoming.map(taskTemplate).join("")}`);
   }
   todayTasks.innerHTML = sections.length ? sections.join("") : emptyText("今天沒有任務");
   const adminVisibleTasks = adminTaskList();
@@ -436,11 +448,15 @@ function renderChat() {
 
 function scrollChatToBottom() {
   if (!chatList) return;
+  const chatScreen = screens.chat;
   const scroll = () => {
     chatList.scrollTop = chatList.scrollHeight;
+    if (chatScreen) chatScreen.scrollTop = chatScreen.scrollHeight;
+    chatList.lastElementChild?.scrollIntoView({ block: "end" });
+    chatInput?.scrollIntoView({ block: "end" });
   };
   requestAnimationFrame(scroll);
-  [60, 180, 420].forEach((delay) => window.setTimeout(scroll, delay));
+  [60, 180, 420, 800].forEach((delay) => window.setTimeout(scroll, delay));
 }
 
 function renderCheckin() {
@@ -1096,10 +1112,11 @@ function fromRemoteTask(task) {
     owner: task.owner,
     author: task.author,
     time: task.time_label,
-    dueDate: task.due_date,
+    dueDate: normalizeDateValue(task.due_date),
     repeat: task.repeat || (task.time_label === "每天" ? "daily" : null),
     done: task.done,
-    lastCompletedDate: task.last_completed_date,
+    lastCompletedDate: normalizeDateValue(task.last_completed_date),
+    createdAt: task.created_at,
   };
 }
 
@@ -1110,8 +1127,9 @@ function toRemoteTask(task) {
     owner: task.owner,
     author: task.author,
     time_label: task.time,
-    due_date: task.dueDate,
+    due_date: normalizeDateValue(task.dueDate),
     done: task.done,
+    last_completed_date: normalizeDateValue(task.lastCompletedDate) || null,
   };
 }
 
@@ -1281,6 +1299,78 @@ async function saveFamilyName() {
   render();
 }
 
+function setProfileManageStatus(message) {
+  if (profileManageStatusText) profileManageStatusText.textContent = message;
+}
+
+async function saveProfileName() {
+  const member = currentMember();
+  if (!member || member === guestMember) {
+    showIdentityPicker();
+    return;
+  }
+  const nextName = profileNameInput.value.trim();
+  const oldName = member.name;
+  if (!nextName) {
+    setProfileManageStatus("名字不能空白。");
+    return;
+  }
+  if (nextName === oldName) {
+    setProfileManageStatus("名字沒有變更。");
+    return;
+  }
+  const nameTaken = state.members.some((item) => {
+    const isSelf = member.id ? sameId(item.id, member.id) : item.name === oldName;
+    return item.name === nextName && !isSelf;
+  });
+  if (nameTaken) {
+    setProfileManageStatus("這個名字已經有人使用。");
+    return;
+  }
+
+  setProfileManageStatus("正在儲存名字...");
+  const renamedMember = { ...member, name: nextName };
+  if (remoteReady && familyId) {
+    const memberQuery = supabaseClient.from("members").update({ name: nextName }).eq("family_id", familyId);
+    const { error: memberError } = member.id
+      ? await memberQuery.eq("id", member.id)
+      : await memberQuery.eq("name", oldName);
+    if (memberError) {
+      setProfileManageStatus("名字儲存失敗，請稍後再試。");
+      setSyncError("Member rename failed", memberError);
+      return;
+    }
+    const updates = [
+      supabaseClient.from("tasks").update({ owner: nextName }).eq("family_id", familyId).eq("owner", oldName),
+      supabaseClient.from("tasks").update({ author: nextName }).eq("family_id", familyId).eq("author", oldName),
+      supabaseClient.from("messages").update({ actor: nextName }).eq("family_id", familyId).eq("actor", oldName),
+      supabaseClient.from("push_subscriptions").update({ member_name: nextName }).eq("family_id", familyId).eq("member_name", oldName),
+    ];
+    const results = await Promise.all(updates);
+    const relatedError = results.find((result) => result.error)?.error;
+    if (relatedError) setSyncError("Related rename sync failed", relatedError);
+  }
+
+  state.members = state.members.map((item) =>
+    (member.id && sameId(item.id, member.id)) || item.name === oldName ? renamedMember : item,
+  );
+  state.tasks = state.tasks.map((task) => ({
+    ...task,
+    owner: task.owner === oldName ? nextName : task.owner,
+    author: task.author === oldName ? nextName : task.author,
+  }));
+  state.chat = state.chat.map((item) => ({
+    ...item,
+    actor: item.actor === oldName ? nextName : item.actor,
+  }));
+  state.currentUser = nextName;
+  if (state.selectedMember === oldName) state.selectedMember = nextName;
+  saveMemberSession(renamedMember);
+  setProfileManageStatus("名字已更新。");
+  if (remoteReady && familyId) await loadRemoteData(false);
+  render();
+}
+
 function openDeleteFamilyConfirm() {
   if (state.role !== "admin") return;
   pendingDeleteFamily = true;
@@ -1444,8 +1534,9 @@ async function updateRemoteTask(task) {
       owner: task.owner,
       author: task.author,
       time_label: task.time,
-      due_date: task.dueDate,
+      due_date: normalizeDateValue(task.dueDate),
       done: task.done,
+      last_completed_date: normalizeDateValue(task.lastCompletedDate) || null,
     })
     .eq("id", task.id);
   if (error) setSyncError("Task update sync failed", error);
@@ -1455,21 +1546,19 @@ async function updateRemoteTask(task) {
 async function updateRemoteMember(member) {
   if (!remoteReady || !familyId) return;
   const payload = {
+    name: member.name,
     health: member.health,
     note: member.note,
     short: member.short,
     role: member.role || (member.name === state.currentUser ? "admin" : "member"),
   };
   if (member.deviceId) payload.device_id = member.deviceId;
-  const query = supabaseClient
-    .from("members")
-    .update(payload)
-    .eq("family_id", familyId)
-    .eq("name", member.name);
-  const { error } = await query;
+  const query = supabaseClient.from("members").update(payload).eq("family_id", familyId);
+  const { error } = member.id ? await query.eq("id", member.id) : await query.eq("name", member.name);
   if (error && payload.device_id) {
     delete payload.device_id;
-    const retry = await supabaseClient.from("members").update(payload).eq("family_id", familyId).eq("name", member.name);
+    const retryQuery = supabaseClient.from("members").update(payload).eq("family_id", familyId);
+    const retry = member.id ? await retryQuery.eq("id", member.id) : await retryQuery.eq("name", member.name);
     if (retry.error) setSyncError("Member update sync failed", retry.error);
     else await loadRemoteData(false);
     return;
@@ -1557,6 +1646,18 @@ function localISODate(date) {
   return `${year}-${month}-${day}`;
 }
 
+function normalizeDateValue(value) {
+  if (!value) return "";
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? "" : localISODate(value);
+  const text = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  if (/^\d{4}\/\d{2}\/\d{2}$/.test(text)) return text.replaceAll("/", "-");
+  const isoDate = text.match(/^(\d{4}-\d{2}-\d{2})T/);
+  if (isoDate) return isoDate[1];
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? "" : localISODate(date);
+}
+
 function addDays(date, days) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
@@ -1579,7 +1680,11 @@ function nextWeekendISO() {
 }
 
 function taskDueDate(task) {
-  return task.dueDate || scheduleFromTime(task.time).dueDate;
+  return normalizeDateValue(task.dueDate) || scheduleFromTime(task.time).dueDate;
+}
+
+function compareTaskDate(a, b) {
+  return taskDueDate(a).localeCompare(taskDueDate(b)) || String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
 }
 
 function isTaskComplete(task) {
@@ -2166,6 +2271,17 @@ document.querySelector("#saveFamilyNameButton").addEventListener("click", () => 
     familyManageStatusText.textContent = "儲存失敗，請稍後再試。";
     console.warn("Family name save failed", error);
   });
+});
+
+document.querySelector("#saveProfileNameButton").addEventListener("click", () => {
+  saveProfileName().catch((error) => {
+    setProfileManageStatus("名字儲存失敗，請稍後再試。");
+    console.warn("Profile name save failed", error);
+  });
+});
+
+profileNameInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") document.querySelector("#saveProfileNameButton").click();
 });
 
 familyNameInput.addEventListener("keydown", (event) => {

@@ -1,4 +1,13 @@
-const CACHE_NAME = "family-workspace-v6";
+const CACHE_NAME = "family-workspace-v7";
+const CORE_PATHS = new Set([
+  "/",
+  "/index.html",
+  "/styles.css",
+  "/app.js",
+  "/manifest.webmanifest",
+  "/version.json",
+  "/service-worker.js",
+]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -28,7 +37,22 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
-  event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+  const url = new URL(event.request.url);
+  const path = url.pathname.endsWith("/") ? "/" : url.pathname.slice(url.pathname.lastIndexOf("/"));
+  const isCoreFile = url.origin === self.location.origin && CORE_PATHS.has(path);
+  const networkRequest = isCoreFile ? new Request(event.request, { cache: "no-store" }) : event.request;
+  event.respondWith(
+    fetch(networkRequest)
+      .then((response) => {
+        if (!response || response.status !== 200 || response.type === "opaque") return response;
+        if (!isCoreFile) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request)),
+  );
 });
 
 self.addEventListener("message", (event) => {
