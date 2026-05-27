@@ -1,4 +1,4 @@
-const CACHE_NAME = "family-workspace-v8";
+const CACHE_NAME = "family-workspace-v9";
 const CORE_PATHS = new Set([
   "/",
   "/index.html",

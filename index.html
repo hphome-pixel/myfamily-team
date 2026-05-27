@@ -11,7 +11,7 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="assets/icons/APP/APP.png" />
     <link rel="icon" href="assets/icons/APP/APP.png" />
-    <link rel="stylesheet" href="styles.css?v=2026.05.27.1" />
+    <link rel="stylesheet" href="styles.css?v=2026.05.27.2" />
   </head>
   <body>
     <main class="phone-shell">
@@ -65,6 +65,24 @@
             <button class="delete-button" id="avatarCloseButton" type="button" aria-label="關閉">×</button>
           </div>
           <div class="avatar-choice-grid" id="avatarChoiceGrid"></div>
+        </section>
+      </div>
+
+      <div class="avatar-layer" id="memberAdminLayer" aria-hidden="true">
+        <section class="avatar-card member-admin-card">
+          <div class="avatar-card-title">
+            <strong id="memberAdminTitle">管理家人</strong>
+            <button class="delete-button" id="memberAdminCloseButton" type="button" aria-label="關閉">×</button>
+          </div>
+          <div class="family-edit-form">
+            <label for="memberAdminNameInput">家人名稱</label>
+            <div class="inline-action-row">
+              <input id="memberAdminNameInput" type="text" placeholder="輸入家人名字" />
+              <button class="primary-button" id="saveMemberAdminNameButton" type="button">儲存</button>
+            </div>
+          </div>
+          <button class="danger-outline-button" id="resetMemberDeviceButton" type="button">重設裝置綁定</button>
+          <p class="version-note" id="memberAdminStatusText"></p>
         </section>
       </div>
 
@@ -376,8 +394,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-      window.APP_ASSET_VERSION = "2026.05.27.1";
+      window.APP_ASSET_VERSION = "2026.05.27.2";
     </script>
-    <script src="app.js?v=2026.05.27.1"></script>
+    <script src="app.js?v=2026.05.27.2"></script>
   </body>
 </html>

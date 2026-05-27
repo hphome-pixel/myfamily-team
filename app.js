@@ -38,8 +38,9 @@ let hasLoadedRemoteOnce = false;
 let pushEnabled = false;
 let pendingAvatarMemberName = null;
 let lastRemoteSignature = "";
+let pendingAdminMemberId = "";
 
-const APP_VERSION = "2026.05.27.1";
+const APP_VERSION = "2026.05.27.2";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
 const SUPABASE_ANON_KEY =
@@ -75,6 +76,17 @@ const avatarOptions = [
   "assets/icons/Character/Character6.png",
   "assets/icons/Character/Character7.png",
   "assets/icons/Character/Character8.png",
+  "assets/icons/Character/Character9.png",
+  "assets/icons/Character/Character10.png",
+  "assets/icons/Character/Character11.png",
+  "assets/icons/Character/Character12.png",
+  "assets/icons/Character/Character13.png",
+  "assets/icons/Character/Character14.png",
+  "assets/icons/Character/Character15.png",
+  "assets/icons/Character/Character16.png",
+  "assets/icons/Character/Character17.png",
+  "assets/icons/Character/Character18.png",
+  "assets/icons/Character/Character19.png",
 ];
 
 preloadAvatarImages();
@@ -139,6 +151,11 @@ const joinCodeInput = document.querySelector("#joinCodeInput");
 const setupStatusText = document.querySelector("#setupStatusText");
 const avatarLayer = document.querySelector("#avatarLayer");
 const avatarChoiceGrid = document.querySelector("#avatarChoiceGrid");
+const memberAdminLayer = document.querySelector("#memberAdminLayer");
+const memberAdminTitle = document.querySelector("#memberAdminTitle");
+const memberAdminNameInput = document.querySelector("#memberAdminNameInput");
+const memberAdminStatusText = document.querySelector("#memberAdminStatusText");
+const resetMemberDeviceButton = document.querySelector("#resetMemberDeviceButton");
 const chooseDateButton = document.querySelector("#chooseDateButton");
 const customDateInput = document.querySelector("#customDateInput");
 const datePickerRow = document.querySelector(".date-picker-row");
@@ -360,17 +377,28 @@ function renderMembers() {
   memberList.innerHTML = state.members.length
     ? state.members
     .map(
-      (member) => `
+      (member) => {
+        const canAdminManage = state.role === "admin" && member.name !== state.currentUser;
+        const deviceLabel = member.deviceId ? "裝置已綁定" : "尚未綁定裝置";
+        return `
         <article class="member-item">
           ${canEditMemberAvatar(member) ? editableAvatarMarkup(member) : avatarMarkup(member)}
           <div class="member-main">
             <strong>${escapeHtml(member.name)}</strong>
-            <small>${escapeHtml(member.note)}</small>
+            <small>${escapeHtml(member.note)}・${deviceLabel}</small>
           </div>
           <span class="member-health">${member.health}</span>
-          ${state.role === "admin" && member.name !== state.currentUser ? `<button class="delete-button" type="button" data-delete-member="${escapeHtml(member.name)}">×</button>` : ""}
+          ${
+            canAdminManage
+              ? `<div class="member-actions">
+                  <button class="mini-button" type="button" data-admin-member="${escapeHtml(String(member.id || ""))}" data-admin-member-name="${escapeHtml(member.name)}">管理</button>
+                  <button class="delete-button" type="button" data-delete-member="${escapeHtml(member.name)}">×</button>
+                </div>`
+              : ""
+          }
         </article>
-      `,
+      `;
+      },
     )
     .join("")
     : emptyText("還沒有家人加入");
@@ -651,6 +679,39 @@ function hideAvatarPicker() {
   pendingAvatarMemberName = null;
   avatarLayer.classList.remove("active");
   avatarLayer.setAttribute("aria-hidden", "true");
+}
+
+function setMemberAdminStatus(message) {
+  if (memberAdminStatusText) memberAdminStatusText.textContent = message;
+}
+
+function adminMember() {
+  return (
+    state.members.find((member) => pendingAdminMemberId && sameId(member.id, pendingAdminMemberId)) ||
+    state.members.find((member) => member.name === memberAdminNameInput?.dataset.originalName) ||
+    null
+  );
+}
+
+function showMemberAdmin(memberId, fallbackName = "") {
+  if (state.role !== "admin") return;
+  const member = memberFor(memberId, fallbackName);
+  if (!member || member.name === state.currentUser) return;
+  pendingAdminMemberId = member.id || "";
+  memberAdminNameInput.value = member.name;
+  memberAdminNameInput.dataset.originalName = member.name;
+  memberAdminTitle.textContent = `管理 ${member.name}`;
+  resetMemberDeviceButton.textContent = member.deviceId ? "重設裝置綁定" : "尚未綁定裝置";
+  resetMemberDeviceButton.disabled = !member.deviceId;
+  setMemberAdminStatus(member.deviceId ? "家人換手機或選錯身份時，可重設裝置綁定。" : "這位家人目前尚未綁定裝置。");
+  memberAdminLayer.classList.add("active");
+  memberAdminLayer.setAttribute("aria-hidden", "false");
+}
+
+function hideMemberAdmin() {
+  pendingAdminMemberId = "";
+  memberAdminLayer.classList.remove("active");
+  memberAdminLayer.setAttribute("aria-hidden", "true");
 }
 
 function showUpdateToast(version) {
@@ -1411,41 +1472,36 @@ async function saveProfileName() {
     return;
   }
   const nextName = profileNameInput.value.trim();
+  const result = await renameMember(member, nextName);
+  setProfileManageStatus(result.message);
+  if (!result.ok) return;
+  render();
+}
+
+async function renameMember(member, nextName) {
+  const cleanName = nextName.trim();
   const oldName = member.name;
-  if (!nextName) {
-    setProfileManageStatus("名字不能空白。");
-    return;
-  }
-  if (nextName === oldName) {
-    setProfileManageStatus("名字沒有變更。");
-    return;
-  }
+  if (!cleanName) return { ok: false, message: "名字不能空白。" };
+  if (cleanName === oldName) return { ok: false, message: "名字沒有變更。" };
   const nameTaken = state.members.some((item) => {
     const isSelf = member.id ? sameId(item.id, member.id) : item.name === oldName;
-    return item.name === nextName && !isSelf;
+    return item.name === cleanName && !isSelf;
   });
-  if (nameTaken) {
-    setProfileManageStatus("這個名字已經有人使用。");
-    return;
-  }
+  if (nameTaken) return { ok: false, message: "這個名字已經有人使用。" };
 
-  setProfileManageStatus("正在儲存名字...");
-  const renamedMember = { ...member, name: nextName };
+  const renamedMember = { ...member, name: cleanName };
   if (remoteReady && familyId) {
-    const memberQuery = supabaseClient.from("members").update({ name: nextName }).eq("family_id", familyId);
-    const { error: memberError } = member.id
-      ? await memberQuery.eq("id", member.id)
-      : await memberQuery.eq("name", oldName);
+    const memberQuery = supabaseClient.from("members").update({ name: cleanName }).eq("family_id", familyId);
+    const { error: memberError } = member.id ? await memberQuery.eq("id", member.id) : await memberQuery.eq("name", oldName);
     if (memberError) {
-      setProfileManageStatus("名字儲存失敗，請稍後再試。");
       setSyncError("Member rename failed", memberError);
-      return;
+      return { ok: false, message: "名字儲存失敗，請稍後再試。" };
     }
     const updates = [
-      supabaseClient.from("tasks").update({ owner: nextName }).eq("family_id", familyId).eq("owner", oldName),
-      supabaseClient.from("tasks").update({ author: nextName }).eq("family_id", familyId).eq("author", oldName),
-      supabaseClient.from("messages").update({ actor: nextName }).eq("family_id", familyId).eq("actor", oldName),
-      supabaseClient.from("push_subscriptions").update({ member_name: nextName }).eq("family_id", familyId).eq("member_name", oldName),
+      supabaseClient.from("tasks").update({ owner: cleanName }).eq("family_id", familyId).eq("owner", oldName),
+      supabaseClient.from("tasks").update({ author: cleanName }).eq("family_id", familyId).eq("author", oldName),
+      supabaseClient.from("messages").update({ actor: cleanName }).eq("family_id", familyId).eq("actor", oldName),
+      supabaseClient.from("push_subscriptions").update({ member_name: cleanName }).eq("family_id", familyId).eq("member_name", oldName),
     ];
     const results = await Promise.all(updates);
     const relatedError = results.find((result) => result.error)?.error;
@@ -1457,18 +1513,72 @@ async function saveProfileName() {
   );
   state.tasks = state.tasks.map((task) => ({
     ...task,
-    owner: task.owner === oldName ? nextName : task.owner,
-    author: task.author === oldName ? nextName : task.author,
+    owner: task.owner === oldName ? cleanName : task.owner,
+    author: task.author === oldName ? cleanName : task.author,
   }));
   state.chat = state.chat.map((item) => ({
     ...item,
-    actor: item.actor === oldName ? nextName : item.actor,
+    actor: item.actor === oldName ? cleanName : item.actor,
   }));
-  state.currentUser = nextName;
-  if (state.selectedMember === oldName) state.selectedMember = nextName;
-  saveMemberSession(renamedMember);
-  setProfileManageStatus("名字已更新。");
+  if (state.currentUser === oldName || (member.id && sameId(member.id, currentMemberId()))) {
+    state.currentUser = cleanName;
+    saveMemberSession(renamedMember);
+  }
+  if (state.selectedMember === oldName) state.selectedMember = cleanName;
   if (remoteReady && familyId) await loadRemoteData(false);
+  return { ok: true, message: "名字已更新。" };
+}
+
+async function saveAdminMemberName() {
+  if (state.role !== "admin") return;
+  const member = adminMember();
+  if (!member || member.name === state.currentUser) {
+    setMemberAdminStatus("找不到這位家人。");
+    return;
+  }
+  setMemberAdminStatus("正在儲存名字...");
+  const result = await renameMember(member, memberAdminNameInput.value);
+  setMemberAdminStatus(result.message);
+  if (!result.ok) return;
+  const updated = memberFor(member.id, memberAdminNameInput.value);
+  if (updated) {
+    pendingAdminMemberId = updated.id || "";
+    memberAdminNameInput.dataset.originalName = updated.name;
+    memberAdminTitle.textContent = `管理 ${updated.name}`;
+  }
+  render();
+}
+
+async function resetAdminMemberDevice() {
+  if (state.role !== "admin") return;
+  const member = adminMember();
+  if (!member || member.name === state.currentUser) {
+    setMemberAdminStatus("找不到這位家人。");
+    return;
+  }
+  if (!member.deviceId) {
+    setMemberAdminStatus("這位家人目前尚未綁定裝置。");
+    return;
+  }
+  setMemberAdminStatus("正在重設裝置...");
+  if (remoteReady && familyId && member.id) {
+    const results = await Promise.all([
+      supabaseClient.from("members").update({ device_id: null }).eq("family_id", familyId).eq("id", member.id),
+      supabaseClient.from("push_subscriptions").delete().eq("family_id", familyId).eq("member_id", member.id),
+      supabaseClient.from("push_subscriptions").delete().eq("family_id", familyId).eq("member_name", member.name),
+    ]);
+    const error = results.find((result) => result.error && !isMissingColumnError(result.error))?.error;
+    if (error) {
+      setMemberAdminStatus("重設失敗，請稍後再試。");
+      setSyncError("Member device reset failed", error);
+      return;
+    }
+  }
+  member.deviceId = "";
+  await loadRemoteData(false);
+  setMemberAdminStatus("裝置綁定已重設。家人下次用新手機進入時可重新選身份。");
+  resetMemberDeviceButton.textContent = "尚未綁定裝置";
+  resetMemberDeviceButton.disabled = true;
   render();
 }
 
@@ -2126,6 +2236,11 @@ document.body.addEventListener("click", async (event) => {
       openDeleteMemberConfirm(name);
     }
   }
+
+  const adminMemberButton = event.target.closest("[data-admin-member]");
+  if (adminMemberButton && state.role === "admin") {
+    showMemberAdmin(adminMemberButton.dataset.adminMember, adminMemberButton.dataset.adminMemberName);
+  }
 });
 
 createTaskButton.addEventListener("click", async () => {
@@ -2181,6 +2296,30 @@ document.querySelector("#avatarCloseButton").addEventListener("click", hideAvata
 
 avatarLayer.addEventListener("click", (event) => {
   if (event.target === avatarLayer) hideAvatarPicker();
+});
+
+document.querySelector("#memberAdminCloseButton").addEventListener("click", hideMemberAdmin);
+
+memberAdminLayer.addEventListener("click", (event) => {
+  if (event.target === memberAdminLayer) hideMemberAdmin();
+});
+
+document.querySelector("#saveMemberAdminNameButton").addEventListener("click", () => {
+  saveAdminMemberName().catch((error) => {
+    setMemberAdminStatus("名字儲存失敗，請稍後再試。");
+    console.warn("Admin member rename failed", error);
+  });
+});
+
+memberAdminNameInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") document.querySelector("#saveMemberAdminNameButton").click();
+});
+
+resetMemberDeviceButton.addEventListener("click", () => {
+  resetAdminMemberDevice().catch((error) => {
+    setMemberAdminStatus("重設失敗，請稍後再試。");
+    console.warn("Member device reset failed", error);
+  });
 });
 
 document.querySelector("#sosSendButton").addEventListener("click", async () => {
