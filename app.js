@@ -41,8 +41,9 @@ let pendingAvatarMemberName = null;
 let lastRemoteSignature = "";
 let pendingAdminMemberId = "";
 let pendingRequestInviteCode = "";
+let securityTestRequestContext = null;
 
-const APP_VERSION = "2026.05.27.8";
+const APP_VERSION = "2026.05.27.9";
 const gameMasterMode = new URLSearchParams(window.location.search).get("gm") === "1";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
@@ -189,6 +190,8 @@ const resetDemoButton = document.querySelector("#resetDemoButton");
 const clearDemoButton = document.querySelector("#clearDemoButton");
 const addDemoTaskButton = document.querySelector("#addDemoTaskButton");
 const cleanupOldDataButton = document.querySelector("#cleanupOldDataButton");
+const securityIsolationTestButton = document.querySelector("#securityIsolationTestButton");
+const securityIsolationTestStatus = document.querySelector("#securityIsolationTestStatus");
 const identityStorageKey = "family-workspace-current-user";
 const memberIdStorageKey = "family-workspace-current-member-id";
 const deviceStorageKey = "family-workspace-device-id";
@@ -690,12 +693,24 @@ function supabaseFetch(input, init = {}) {
 }
 
 function remoteRequestHeaders() {
+  const context = securityTestRequestContext || {};
   return {
-    "x-family-id": familyId || localStorage.getItem(familyIdStorageKey) || "",
-    "x-family-invite-code": pendingRequestInviteCode || state.inviteCode || savedFamilyInviteCode() || inviteCodeFromHash() || "",
-    "x-member-id": localStorage.getItem(memberIdStorageKey) || currentMemberId(),
-    "x-device-id": currentDeviceId(),
+    "x-family-id": context.familyId ?? familyId ?? localStorage.getItem(familyIdStorageKey) ?? "",
+    "x-family-invite-code":
+      context.inviteCode ?? pendingRequestInviteCode ?? state.inviteCode ?? savedFamilyInviteCode() ?? inviteCodeFromHash() ?? "",
+    "x-member-id": context.memberId ?? localStorage.getItem(memberIdStorageKey) ?? currentMemberId(),
+    "x-device-id": context.deviceId ?? currentDeviceId(),
   };
+}
+
+async function withRemoteRequestContext(context, action) {
+  const previousContext = securityTestRequestContext;
+  securityTestRequestContext = context;
+  try {
+    return await action();
+  } finally {
+    securityTestRequestContext = previousContext;
+  }
 }
 
 function saveMemberSession(member) {
@@ -1838,6 +1853,105 @@ function canResetDemoData() {
   return false;
 }
 
+function setSecurityTestStatus(message) {
+  if (securityIsolationTestStatus) securityIsolationTestStatus.textContent = message;
+}
+
+async function runSecurityIsolationTest() {
+  if (!gameMasterMode || state.role !== "admin") return;
+  if (!remoteReady || !familyId || !supabaseClient) {
+    setSecurityTestStatus("Supabase 尚未連線。");
+    return;
+  }
+
+  securityIsolationTestButton.disabled = true;
+  setSecurityTestStatus("正在建立隔離測試家庭...");
+  const testInviteCode = generateInviteCode();
+  let testFamily = null;
+  let testMember = null;
+  try {
+    testFamily = await withRemoteRequestContext({ familyId: "", inviteCode: testInviteCode, memberId: "" }, async () => {
+      const { data, error } = await supabaseClient
+        .from("families")
+        .insert({ name: `隔離測試 ${testInviteCode}`, invite_code: testInviteCode })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    });
+
+    testMember = await withRemoteRequestContext({ familyId: testFamily.id, inviteCode: testInviteCode, memberId: "" }, async () => {
+      const { data, error } = await supabaseClient
+        .from("members")
+        .insert({
+          family_id: testFamily.id,
+          name: "隔離測試員",
+          short: avatarOptions[0],
+          role: "admin",
+          health: "😐",
+          note: "權限測試",
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    });
+
+    await withRemoteRequestContext({ familyId: testFamily.id, inviteCode: testInviteCode, memberId: testMember.id }, async () => {
+      const [{ error: taskError }, { error: messageError }] = await Promise.all([
+        supabaseClient.from("tasks").insert({
+          family_id: testFamily.id,
+          title: "隔離任務",
+          owner: "隔離測試員",
+          owner_member_id: testMember.id,
+          author: "隔離測試員",
+          author_member_id: testMember.id,
+          time_label: "今天",
+          due_date: todayISO(),
+          done: false,
+        }),
+        supabaseClient.from("messages").insert({
+          family_id: testFamily.id,
+          actor: "隔離測試員",
+          actor_member_id: testMember.id,
+          text: "隔離聊天",
+          type: "normal",
+        }),
+      ]);
+      if (taskError || messageError) throw taskError || messageError;
+    });
+
+    setSecurityTestStatus("正在嘗試跨家庭讀取...");
+    const currentContext = {
+      familyId,
+      inviteCode: state.inviteCode,
+      memberId: currentMemberId(),
+      deviceId: currentDeviceId(),
+    };
+    const [memberProbe, taskProbe, messageProbe] = await withRemoteRequestContext(currentContext, async () =>
+      Promise.all([
+        supabaseClient.from("members").select("id").eq("family_id", testFamily.id),
+        supabaseClient.from("tasks").select("id").eq("family_id", testFamily.id),
+        supabaseClient.from("messages").select("id").eq("family_id", testFamily.id),
+      ]),
+    );
+    const probeError = [memberProbe, taskProbe, messageProbe].find((result) => result.error)?.error;
+    if (probeError) throw probeError;
+    const leakedRows = [memberProbe, taskProbe, messageProbe].reduce((sum, result) => sum + (result.data?.length || 0), 0);
+    setSecurityTestStatus(leakedRows === 0 ? "通過：目前家庭讀不到隔離家庭資料。" : `未通過：讀到 ${leakedRows} 筆隔離資料。`);
+  } catch (error) {
+    setSecurityTestStatus(`測試失敗：${error.message || "請稍後再試"}`);
+    console.warn("Security isolation test failed", error);
+  } finally {
+    if (testFamily && testMember) {
+      await withRemoteRequestContext({ familyId: testFamily.id, inviteCode: testInviteCode, memberId: testMember.id }, async () => {
+        await supabaseClient.from("families").delete().eq("id", testFamily.id);
+      });
+    }
+    securityIsolationTestButton.disabled = false;
+  }
+}
+
 async function clearRemoteDemoData() {
   if (!remoteReady || !familyId) return;
   const [{ error: taskError }, { error: messageError }, { error: memberError }] = await Promise.all([
@@ -2691,6 +2805,10 @@ addDemoTaskButton.addEventListener("click", async () => {
   const random = templates[Math.floor(Math.random() * templates.length)];
   await addTask(random.title, state.members[Math.floor(Math.random() * state.members.length)].name, "今天");
   render();
+});
+
+securityIsolationTestButton.addEventListener("click", () => {
+  runSecurityIsolationTest();
 });
 
 document.querySelector("#saveFamilyNameButton").addEventListener("click", () => {
