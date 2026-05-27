@@ -43,7 +43,7 @@ let pendingAdminMemberId = "";
 let pendingRequestInviteCode = "";
 let securityTestRequestContext = null;
 
-const APP_VERSION = "2026.05.27.9";
+const APP_VERSION = "2026.05.27.10";
 const gameMasterMode = new URLSearchParams(window.location.search).get("gm") === "1";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
@@ -675,6 +675,10 @@ function savedFamilyInviteCode() {
   return localStorage.getItem(familyInviteStorageKey) || "";
 }
 
+function savedFamilyId() {
+  return localStorage.getItem(familyIdStorageKey) || "";
+}
+
 function currentDeviceId() {
   let id = localStorage.getItem(deviceStorageKey);
   if (!id) {
@@ -695,7 +699,7 @@ function supabaseFetch(input, init = {}) {
 function remoteRequestHeaders() {
   const context = securityTestRequestContext || {};
   return {
-    "x-family-id": context.familyId ?? familyId ?? localStorage.getItem(familyIdStorageKey) ?? "",
+    "x-family-id": context.familyId ?? familyId ?? savedFamilyId() ?? "",
     "x-family-invite-code":
       context.inviteCode ?? pendingRequestInviteCode ?? state.inviteCode ?? savedFamilyInviteCode() ?? inviteCodeFromHash() ?? "",
     "x-member-id": context.memberId ?? localStorage.getItem(memberIdStorageKey) ?? currentMemberId(),
@@ -1448,15 +1452,16 @@ async function initRemote() {
   try {
     const hashInviteCode = inviteCodeFromHash();
     const storedInviteCode = savedFamilyInviteCode();
+    const storedFamilyId = savedFamilyId();
     const legacyUser = localStorage.getItem(identityStorageKey);
     const inviteCode = hashInviteCode || storedInviteCode || (legacyUser ? LEGACY_INVITE_CODE : "");
-    if (!inviteCode) {
+    if (!inviteCode && !storedFamilyId) {
       showSetupPicker();
       return;
     }
-    const family = await findFamilyByInviteCode(inviteCode);
+    const family = inviteCode ? await findFamilyByInviteCode(inviteCode) : await findFamilyById(storedFamilyId);
     if (!family) {
-      showSetupPicker("找不到這個家庭，請確認邀請碼。");
+      showSetupPicker("找不到原本家庭，請用邀請碼重新加入。");
       return;
     }
     saveFamilySession(family);
@@ -1479,6 +1484,14 @@ async function findFamilyByInviteCode(inviteCode) {
     .select("*")
     .eq("invite_code", normalizeInviteCode(inviteCode))
     .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function findFamilyById(id) {
+  pendingRequestInviteCode = "";
+  familyId = id;
+  const { data, error } = await supabaseClient.from("families").select("*").eq("id", id).maybeSingle();
   if (error) throw error;
   return data;
 }

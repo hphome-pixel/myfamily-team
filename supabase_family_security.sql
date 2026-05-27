@@ -43,11 +43,18 @@ declare
 begin
   header_family_id := public.request_uuid_header('x-family-id');
   header_invite_code := public.request_header('x-family-invite-code');
-  if header_invite_code is null then
-    return null;
+
+  if header_family_id is not null and header_invite_code is null then
+    select id
+      into matched_family_id
+      from public.families
+     where id = header_family_id
+     limit 1;
+
+    return matched_family_id;
   end if;
 
-  if header_family_id is not null then
+  if header_family_id is not null and header_invite_code is not null then
     select id
       into matched_family_id
       from public.families
@@ -56,6 +63,10 @@ begin
      limit 1;
 
     return matched_family_id;
+  end if;
+
+  if header_invite_code is null then
+    return null;
   end if;
 
   select id
