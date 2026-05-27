@@ -40,14 +40,17 @@ let pushEnabled = false;
 let pendingAvatarMemberName = null;
 let lastRemoteSignature = "";
 let pendingAdminMemberId = "";
+let pendingRequestInviteCode = "";
 
-const APP_VERSION = "2026.05.27.7";
+const APP_VERSION = "2026.05.27.8";
 const gameMasterMode = new URLSearchParams(window.location.search).get("gm") === "1";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtyd3NtaHJha3BjZG1vY2Nra21mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzOTczNzksImV4cCI6MjA5NDk3MzM3OX0.y-msZ7K96ldRBgUqQUCK90SPZEM9BKaQqfKGV1WbNSs";
-const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  global: { fetch: supabaseFetch },
+});
 
 const statusOptions = [
   { emoji: "😄", label: "OK" },
@@ -658,6 +661,7 @@ function generateInviteCode() {
 
 function saveFamilySession(family) {
   familyId = family.id;
+  pendingRequestInviteCode = "";
   state.familyName = family.name;
   state.inviteCode = family.invite_code;
   localStorage.setItem(familyIdStorageKey, family.id);
@@ -675,6 +679,23 @@ function currentDeviceId() {
     localStorage.setItem(deviceStorageKey, id);
   }
   return id;
+}
+
+function supabaseFetch(input, init = {}) {
+  const headers = new Headers(init.headers || {});
+  Object.entries(remoteRequestHeaders()).forEach(([key, value]) => {
+    if (value) headers.set(key, value);
+  });
+  return fetch(input, { ...init, headers });
+}
+
+function remoteRequestHeaders() {
+  return {
+    "x-family-id": familyId || localStorage.getItem(familyIdStorageKey) || "",
+    "x-family-invite-code": pendingRequestInviteCode || state.inviteCode || savedFamilyInviteCode() || inviteCodeFromHash() || "",
+    "x-member-id": localStorage.getItem(memberIdStorageKey) || currentMemberId(),
+    "x-device-id": currentDeviceId(),
+  };
 }
 
 function saveMemberSession(member) {
@@ -1437,6 +1458,7 @@ async function initRemote() {
 }
 
 async function findFamilyByInviteCode(inviteCode) {
+  pendingRequestInviteCode = normalizeInviteCode(inviteCode);
   const { data, error } = await supabaseClient
     .from("families")
     .select("*")
@@ -1453,6 +1475,7 @@ async function createFamily() {
   let family = null;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const inviteCode = generateInviteCode();
+    pendingRequestInviteCode = inviteCode;
     const created = await supabaseClient
       .from("families")
       .insert({ name: familyName, invite_code: inviteCode })
@@ -1463,6 +1486,7 @@ async function createFamily() {
       break;
     }
   }
+  pendingRequestInviteCode = "";
   if (!family) {
     setSetupStatus("建立失敗，請稍後再試。");
     return;
