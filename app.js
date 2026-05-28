@@ -1,6 +1,7 @@
 const initialState = {
   familyName: "家裡小隊",
   inviteCode: "FAM-8392",
+  familyTimezone: browserTimezone(),
   backendStatus: "已同步",
   currentUser: "",
   role: "member",
@@ -43,7 +44,7 @@ let pendingAdminMemberId = "";
 let pendingRequestInviteCode = "";
 let securityTestRequestContext = null;
 
-const APP_VERSION = "2026.05.28.1";
+const APP_VERSION = "2026.05.28.2";
 const gameMasterMode = new URLSearchParams(window.location.search).get("gm") === "1";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
@@ -173,6 +174,7 @@ const familyNameText = document.querySelector("#familyNameText");
 const profileNameInput = document.querySelector("#profileNameInput");
 const profileManageStatusText = document.querySelector("#profileManageStatusText");
 const familyNameInput = document.querySelector("#familyNameInput");
+const familyTimezoneSelect = document.querySelector("#familyTimezoneSelect");
 const familyInviteText = document.querySelector("#familyInviteText");
 const familyManageStatusText = document.querySelector("#familyManageStatusText");
 const soundToggleButton = document.querySelector("#soundToggleButton");
@@ -252,10 +254,8 @@ function render() {
 }
 
 function renderTodayMeta() {
-  const date = currentDate();
-  const monthDay = new Intl.DateTimeFormat("zh-TW", { month: "numeric", day: "numeric" }).format(date);
-  const weekday = new Intl.DateTimeFormat("zh-TW", { weekday: "short" }).format(date);
-  todayMeta.textContent = `${monthDay} ${weekday}・${state.members.length} 人家庭・天氣待開啟`;
+  const date = currentZonedDateParts();
+  todayMeta.textContent = `${date.month}/${date.day} ${date.weekday}・${state.members.length} 人家庭・${timezoneLabel(state.familyTimezone)}`;
 }
 
 function renderHeroBanner() {
@@ -300,6 +300,10 @@ function renderFamilySpace() {
   }
   if (familyNameInput && document.activeElement !== familyNameInput) {
     familyNameInput.value = state.familyName;
+  }
+  if (familyTimezoneSelect && document.activeElement !== familyTimezoneSelect) {
+    ensureTimezoneOption(state.familyTimezone);
+    familyTimezoneSelect.value = state.familyTimezone;
   }
   if (familyInviteText) familyInviteText.textContent = state.inviteCode;
   const canManage = state.role === "admin";
@@ -667,6 +671,7 @@ function saveFamilySession(family) {
   pendingRequestInviteCode = "";
   state.familyName = family.name;
   state.inviteCode = family.invite_code;
+  state.familyTimezone = normalizeTimezone(family.timezone || state.familyTimezone || browserTimezone());
   localStorage.setItem(familyIdStorageKey, family.id);
   localStorage.setItem(familyInviteStorageKey, family.invite_code);
 }
@@ -992,7 +997,7 @@ function chatDateDivider(value) {
   const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
   const key = localISODate(safeDate);
   const today = todayISO();
-  const yesterday = localISODate(addDays(currentDate(), -1));
+  const yesterday = addDaysToISO(todayISO(), -1);
   const label =
     key === today
       ? "今天"
@@ -1506,9 +1511,21 @@ async function createFamily() {
     pendingRequestInviteCode = inviteCode;
     const created = await supabaseClient
       .from("families")
-      .insert({ name: familyName, invite_code: inviteCode })
+      .insert({ name: familyName, invite_code: inviteCode, timezone: browserTimezone() })
       .select()
       .single();
+    if (created.error && isMissingColumnError(created.error)) {
+      const fallbackCreated = await supabaseClient
+        .from("families")
+        .insert({ name: familyName, invite_code: inviteCode })
+        .select()
+        .single();
+      if (!fallbackCreated.error) {
+        family = fallbackCreated.data;
+        family.timezone = browserTimezone();
+        break;
+      }
+    }
     if (!created.error) {
       family = created.data;
       break;
@@ -1554,19 +1571,25 @@ async function activateFamily(family) {
 async function saveFamilyName() {
   if (state.role !== "admin" || !remoteReady || !familyId) return;
   const nextName = familyNameInput.value.trim();
+  const nextTimezone = normalizeTimezone(familyTimezoneSelect?.value || state.familyTimezone);
   if (!nextName) {
     familyManageStatusText.textContent = "家庭名稱不能空白。";
     return;
   }
   familyManageStatusText.textContent = "正在儲存...";
-  const { error } = await supabaseClient.from("families").update({ name: nextName }).eq("id", familyId);
+  let result = await supabaseClient.from("families").update({ name: nextName, timezone: nextTimezone }).eq("id", familyId);
+  if (result.error && isMissingColumnError(result.error)) {
+    result = await supabaseClient.from("families").update({ name: nextName }).eq("id", familyId);
+  }
+  const { error } = result;
   if (error) {
     familyManageStatusText.textContent = "儲存失敗，請稍後再試。";
     setSyncError("Family name update failed", error);
     return;
   }
   state.familyName = nextName;
-  familyManageStatusText.textContent = "家庭名稱已更新。";
+  state.familyTimezone = nextTimezone;
+  familyManageStatusText.textContent = "家庭設定已更新。";
   render();
 }
 
@@ -2135,11 +2158,14 @@ async function resetRemoteDemo() {
 }
 
 function todayISO() {
-  return localISODate(currentDate());
+  return addDaysToISO(familyTodayISO(), state.dateOffsetDays || 0);
 }
 
 function currentDate() {
-  return addDays(new Date(), state.dateOffsetDays || 0);
+  const date = familyDateFromISO(todayISO());
+  const parts = currentZonedDateParts();
+  date.setHours(parts.hour, parts.minute, parts.second, 0);
+  return date;
 }
 
 function localISODate(date) {
@@ -2161,6 +2187,82 @@ function normalizeDateValue(value) {
   return Number.isNaN(date.getTime()) ? "" : localISODate(date);
 }
 
+function browserTimezone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+function normalizeTimezone(value) {
+  const timezone = value || browserTimezone();
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
+    return timezone;
+  } catch {
+    return "UTC";
+  }
+}
+
+function ensureTimezoneOption(timezone) {
+  if (!familyTimezoneSelect || !timezone) return;
+  if ([...familyTimezoneSelect.options].some((option) => option.value === timezone)) return;
+  const option = document.createElement("option");
+  option.value = timezone;
+  option.textContent = timezone;
+  familyTimezoneSelect.append(option);
+}
+
+function timezoneLabel(timezone) {
+  const map = {
+    "Asia/Taipei": "台灣時間",
+    "America/Los_Angeles": "美西時間",
+    "America/New_York": "美東時間",
+    "UTC": "UTC",
+  };
+  return map[timezone] || timezone;
+}
+
+function currentZonedDateParts(baseDate = new Date()) {
+  return zonedDateParts(addDays(baseDate, state.dateOffsetDays || 0), state.familyTimezone);
+}
+
+function zonedDateParts(date, timezone = state.familyTimezone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: normalizeTimezone(timezone),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })
+    .formatToParts(date)
+    .reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    weekday: parts.weekday,
+    hour: Number(parts.hour === "24" ? "0" : parts.hour),
+    minute: Number(parts.minute),
+    second: Number(parts.second),
+  };
+}
+
+function familyTodayISO() {
+  const parts = zonedDateParts(new Date(), state.familyTimezone);
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+}
+
+function familyDateFromISO(value) {
+  const [year, month, day] = (normalizeDateValue(value) || familyTodayISO()).split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function addDaysToISO(value, days) {
+  return localISODate(addDays(familyDateFromISO(value), days));
+}
+
 function addDays(date, days) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
@@ -2169,14 +2271,14 @@ function addDays(date, days) {
 
 function scheduleFromTime(time) {
   if (time === "每天") return { dueDate: todayISO(), repeat: "daily" };
-  if (time === "明天") return { dueDate: localISODate(addDays(currentDate(), 1)), repeat: null };
+  if (time === "明天") return { dueDate: addDaysToISO(todayISO(), 1), repeat: null };
   if (time === "週末") return { dueDate: nextWeekendISO(), repeat: null };
   if (/^\d{4}\/\d{2}\/\d{2}$/.test(time)) return { dueDate: time.replaceAll("/", "-"), repeat: null };
   return { dueDate: todayISO(), repeat: null };
 }
 
 function nextWeekendISO() {
-  const date = currentDate();
+  const date = familyDateFromISO(todayISO());
   const day = date.getDay();
   const daysUntilSaturday = (6 - day + 7) % 7 || 7;
   return localISODate(addDays(date, daysUntilSaturday));
@@ -2211,7 +2313,7 @@ function displayTaskTime(task) {
   if (task.repeat === "daily" || task.time === "每天") return "每天";
   const dueDate = taskDueDate(task);
   if (dueDate === todayISO()) return "今天";
-  if (dueDate === localISODate(addDays(currentDate(), 1))) return "明天";
+  if (dueDate === addDaysToISO(todayISO(), 1)) return "明天";
   return dueDate.replaceAll("-", "/");
 }
 
@@ -2220,7 +2322,7 @@ function heroImageForNow() {
   if (state.heroMode === "night") return "assets/icons/Hero Banner/晚上.png";
   if (state.heroMode === "rain") return "assets/icons/Hero Banner/雨天.png";
   if (state.weatherMode === "rain") return "assets/icons/Hero Banner/雨天.png";
-  const hour = currentDate().getHours();
+  const hour = currentZonedDateParts().hour;
   if (hour >= 18 || hour < 6) return "assets/icons/Hero Banner/晚上.png";
   return "assets/icons/Hero Banner/白天.png";
 }

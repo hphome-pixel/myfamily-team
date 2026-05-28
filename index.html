@@ -11,7 +11,7 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="assets/icons/APP/APP.png" />
     <link rel="icon" href="assets/icons/APP/APP.png" />
-    <link rel="stylesheet" href="styles.css?v=2026.05.28.1" />
+    <link rel="stylesheet" href="styles.css?v=2026.05.28.2" />
   </head>
   <body>
     <main class="phone-shell">
@@ -276,6 +276,24 @@
               <button class="primary-button" id="saveFamilyNameButton" type="button">儲存</button>
             </div>
           </div>
+          <div class="family-edit-form">
+            <label for="familyTimezoneSelect">家庭時區</label>
+            <select id="familyTimezoneSelect" aria-label="家庭時區">
+              <option value="Asia/Taipei">台灣 Asia/Taipei</option>
+              <option value="America/Los_Angeles">美國西岸 America/Los_Angeles</option>
+              <option value="America/New_York">美國東岸 America/New_York</option>
+              <option value="America/Chicago">美國中部 America/Chicago</option>
+              <option value="America/Denver">美國山區 America/Denver</option>
+              <option value="Asia/Tokyo">日本 Asia/Tokyo</option>
+              <option value="Asia/Hong_Kong">香港 Asia/Hong_Kong</option>
+              <option value="Asia/Singapore">新加坡 Asia/Singapore</option>
+              <option value="Europe/London">英國 Europe/London</option>
+              <option value="Europe/Paris">歐洲中部 Europe/Paris</option>
+              <option value="Australia/Sydney">澳洲雪梨 Australia/Sydney</option>
+              <option value="UTC">UTC</option>
+            </select>
+            <small class="field-hint">今天、明天、每天任務會依家庭時區計算。</small>
+          </div>
           <div class="sync-card">
             <strong id="familyInviteText">FAM-8392</strong>
             <small>邀請碼會連到目前這個家庭。家人加入後，只會看到這個家庭的任務和聊天。</small>
@@ -419,8 +437,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-      window.APP_ASSET_VERSION = "2026.05.28.1";
+      window.APP_ASSET_VERSION = "2026.05.28.2";
     </script>
-    <script src="app.js?v=2026.05.28.1"></script>
+    <script src="app.js?v=2026.05.28.2"></script>
   </body>
 </html>
