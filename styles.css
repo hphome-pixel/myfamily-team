@@ -1102,6 +1102,12 @@ h2 {
   font-weight: 900;
 }
 
+.member-link-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 .inline-action-row {
   display: grid;
   grid-template-columns: 1fr auto;

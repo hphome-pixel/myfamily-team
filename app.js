@@ -44,7 +44,7 @@ let pendingAdminMemberId = "";
 let pendingRequestInviteCode = "";
 let securityTestRequestContext = null;
 
-const APP_VERSION = "2026.05.28.2";
+const APP_VERSION = "2026.05.28.3";
 const gameMasterMode = new URLSearchParams(window.location.search).get("gm") === "1";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
@@ -164,6 +164,8 @@ const memberAdminTitle = document.querySelector("#memberAdminTitle");
 const memberAdminNameInput = document.querySelector("#memberAdminNameInput");
 const memberAdminStatusText = document.querySelector("#memberAdminStatusText");
 const resetMemberDeviceButton = document.querySelector("#resetMemberDeviceButton");
+const copyMemberLinkButton = document.querySelector("#copyMemberLinkButton");
+const regenerateMemberCodeButton = document.querySelector("#regenerateMemberCodeButton");
 const chooseDateButton = document.querySelector("#chooseDateButton");
 const customDateInput = document.querySelector("#customDateInput");
 const datePickerRow = document.querySelector(".date-picker-row");
@@ -612,6 +614,19 @@ function applySavedIdentity() {
   applyCurrentRole();
 }
 
+function applyMemberCodeFromHash() {
+  const code = memberCodeFromHash();
+  if (!code) return false;
+  const member = state.members.find((item) => item.memberCode === code);
+  if (!member) return false;
+  state.currentUser = member.name;
+  state.selectedMember = member.name;
+  saveMemberSession(member);
+  applyCurrentRole();
+  hideIdentityPicker();
+  return true;
+}
+
 function ensureIdentity() {
   const savedMemberId = localStorage.getItem(memberIdStorageKey);
   const savedUser = localStorage.getItem(identityStorageKey);
@@ -653,6 +668,11 @@ function inviteCodeFromHash() {
   return match ? decodeURIComponent(match[1]).trim().toUpperCase() : "";
 }
 
+function memberCodeFromHash() {
+  const match = location.hash.match(/member=([^&]+)/);
+  return match ? decodeURIComponent(match[1]).trim() : "";
+}
+
 function normalizeInviteCode(value) {
   return value.trim().toUpperCase();
 }
@@ -664,6 +684,11 @@ function generateInviteCode() {
     code += alphabet[Math.floor(Math.random() * alphabet.length)];
   }
   return code;
+}
+
+function generateMemberCode() {
+  const random = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `mem_${random.replace(/-/g, "").slice(0, 24)}`;
 }
 
 function saveFamilySession(family) {
@@ -727,6 +752,12 @@ function saveMemberSession(member) {
   if (member.id) localStorage.setItem(memberIdStorageKey, String(member.id));
 }
 
+function memberInviteUrl(member) {
+  const code = member.memberCode || "";
+  const basePath = location.href.split("#")[0];
+  return `${basePath}#join=${state.inviteCode}${code ? `&member=${encodeURIComponent(code)}` : ""}`;
+}
+
 function clearFamilySession() {
   localStorage.removeItem(familyIdStorageKey);
   localStorage.removeItem(familyInviteStorageKey);
@@ -784,7 +815,13 @@ function showMemberAdmin(memberId, fallbackName = "") {
   memberAdminTitle.textContent = `管理 ${member.name}`;
   resetMemberDeviceButton.textContent = member.deviceId ? "重設裝置綁定" : "尚未綁定裝置";
   resetMemberDeviceButton.disabled = !member.deviceId;
-  setMemberAdminStatus(member.deviceId ? "家人換手機或選錯身份時，可重設裝置綁定。" : "這位家人目前尚未綁定裝置。");
+  copyMemberLinkButton.disabled = false;
+  regenerateMemberCodeButton.disabled = false;
+  setMemberAdminStatus(
+    member.memberCode
+      ? "可複製專屬身份連結給這位家人。"
+      : "尚未產生身份連結，按複製時會自動產生。",
+  );
   memberAdminLayer.classList.add("active");
   memberAdminLayer.setAttribute("aria-hidden", "false");
 }
@@ -1303,6 +1340,7 @@ function remoteSignature(members, tasks, messages) {
       member.short,
       member.role,
       member.device_id,
+      member.member_code,
       member.health,
       member.note,
       member.updated_at,
@@ -1342,6 +1380,7 @@ function fromRemoteMember(member) {
     note: member.note || "已加入家庭",
     role: member.role || "member",
     deviceId: member.device_id || "",
+    memberCode: member.member_code || "",
   };
 }
 
@@ -1714,6 +1753,59 @@ async function resetAdminMemberDevice() {
   render();
 }
 
+async function ensureMemberCode(member, { regenerate = false } = {}) {
+  if (!member || !member.id || state.role !== "admin" || !remoteReady || !familyId) return null;
+  if (member.memberCode && !regenerate) return member.memberCode;
+  const memberCode = generateMemberCode();
+  const { error } = await supabaseClient
+    .from("members")
+    .update({ member_code: memberCode })
+    .eq("family_id", familyId)
+    .eq("id", member.id);
+  if (error) {
+    if (isMissingColumnError(error)) {
+      setMemberAdminStatus("請先在 Supabase 跑 supabase_member_codes.sql。");
+    } else {
+      setMemberAdminStatus("身份連結產生失敗，請稍後再試。");
+      setSyncError("Member code update failed", error);
+    }
+    return null;
+  }
+  member.memberCode = memberCode;
+  await loadRemoteData(false);
+  return memberCode;
+}
+
+async function copyMemberInviteLink() {
+  const member = adminMember();
+  if (!member) return;
+  setMemberAdminStatus("正在準備身份連結...");
+  const code = await ensureMemberCode(member);
+  if (!code) return;
+  const linkedMember = memberFor(member.id, member.name) || { ...member, memberCode: code };
+  try {
+    await navigator.clipboard.writeText(memberInviteUrl(linkedMember));
+    setMemberAdminStatus(`已複製 ${linkedMember.name} 的身份連結。`);
+  } catch {
+    setMemberAdminStatus("複製失敗，請稍後再試。");
+  }
+}
+
+async function regenerateMemberInviteLink() {
+  const member = adminMember();
+  if (!member) return;
+  setMemberAdminStatus("正在重新產生身份連結...");
+  const code = await ensureMemberCode(member, { regenerate: true });
+  if (!code) return;
+  const linkedMember = memberFor(member.id, member.name) || { ...member, memberCode: code };
+  try {
+    await navigator.clipboard.writeText(memberInviteUrl(linkedMember));
+    setMemberAdminStatus(`已重新產生並複製 ${linkedMember.name} 的身份連結。舊連結將失效。`);
+  } catch {
+    setMemberAdminStatus("已重新產生身份連結，但複製失敗。");
+  }
+}
+
 function openDeleteFamilyConfirm() {
   if (state.role !== "admin") return;
   pendingDeleteFamily = true;
@@ -1842,12 +1934,13 @@ async function loadRemoteData(shouldRender = true) {
       return;
     }
 
-    state.members = members.map(fromRemoteMember);
-    state.tasks = tasks.map(fromRemoteTask);
-    state.chat = messages.map(fromRemoteMessage);
-    state.feed = messages.slice(-6).reverse().map(messageToFeed);
-    state.backendStatus = "Supabase 已連線";
-    applySavedIdentity();
+  state.members = members.map(fromRemoteMember);
+  state.tasks = tasks.map(fromRemoteTask);
+  state.chat = messages.map(fromRemoteMessage);
+  state.feed = messages.slice(-6).reverse().map(messageToFeed);
+  state.backendStatus = "Supabase 已連線";
+  applySavedIdentity();
+  applyMemberCodeFromHash();
     syncCurrentMemberDevice();
     state.pendingCheckin = derivePendingCheckin(messages);
     notifyRemoteChanges(messages, tasks);
@@ -2078,9 +2171,18 @@ async function updateRemoteMember(member) {
     short: member.short,
     role: member.role || (member.name === state.currentUser ? "admin" : "member"),
   };
+  if (member.memberCode) payload.member_code = member.memberCode;
   if (member.deviceId) payload.device_id = member.deviceId;
   const query = supabaseClient.from("members").update(payload).eq("family_id", familyId);
   const { error } = member.id ? await query.eq("id", member.id) : await query.eq("name", member.name);
+  if (error && isMissingColumnError(error) && payload.member_code) {
+    delete payload.member_code;
+    const retryQuery = supabaseClient.from("members").update(payload).eq("family_id", familyId);
+    const retry = member.id ? await retryQuery.eq("id", member.id) : await retryQuery.eq("name", member.name);
+    if (retry.error) setSyncError("Member update sync failed", retry.error);
+    else await loadRemoteData(false);
+    return;
+  }
   if (error && payload.device_id) {
     delete payload.device_id;
     const retryQuery = supabaseClient.from("members").update(payload).eq("family_id", familyId);
@@ -2114,8 +2216,13 @@ async function insertRemoteMember(member) {
     health: member.health,
     note: member.note,
     device_id: member.deviceId || currentDeviceId(),
+    member_code: member.memberCode || generateMemberCode(),
   };
   let result = await supabaseClient.from("members").insert(payload).select().single();
+  if (result.error && isMissingColumnError(result.error)) {
+    delete payload.member_code;
+    result = await supabaseClient.from("members").insert(payload).select().single();
+  }
   if (result.error && payload.device_id) {
     delete payload.device_id;
     result = await supabaseClient.from("members").insert(payload).select().single();
@@ -2712,6 +2819,20 @@ resetMemberDeviceButton.addEventListener("click", () => {
   resetAdminMemberDevice().catch((error) => {
     setMemberAdminStatus("重設失敗，請稍後再試。");
     console.warn("Member device reset failed", error);
+  });
+});
+
+copyMemberLinkButton.addEventListener("click", () => {
+  copyMemberInviteLink().catch((error) => {
+    setMemberAdminStatus("身份連結複製失敗，請稍後再試。");
+    console.warn("Member link copy failed", error);
+  });
+});
+
+regenerateMemberCodeButton.addEventListener("click", () => {
+  regenerateMemberInviteLink().catch((error) => {
+    setMemberAdminStatus("身份連結產生失敗，請稍後再試。");
+    console.warn("Member link regenerate failed", error);
   });
 });
 
