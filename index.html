@@ -11,7 +11,7 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="assets/icons/APP/APP.png" />
     <link rel="icon" href="assets/icons/APP/APP.png" />
-    <link rel="stylesheet" href="styles.css?v=2026.05.27.10" />
+    <link rel="stylesheet" href="styles.css?v=2026.05.28.1" />
   </head>
   <body>
     <main class="phone-shell">
@@ -287,13 +287,18 @@
         <section class="block" id="dataManageBlock">
           <div class="block-title">
             <h2>資料管理</h2>
-            <span>保留 90 天</span>
+            <span>自動保留規則</span>
+          </div>
+          <div class="retention-summary" aria-label="資料保存規則">
+            <span>聊天 90 天</span>
+            <span>已完成任務 90 天</span>
+            <span>未完成任務保留</span>
           </div>
           <div class="admin-actions data-actions">
             <button id="checkUpdateButton" type="button">檢查更新</button>
             <button class="admin-data-tool" id="resetDemoButton" type="button">重設示範資料</button>
             <button class="admin-data-tool" id="clearDemoButton" type="button">移除所有範例</button>
-            <button class="admin-data-tool" id="cleanupOldDataButton" type="button">清理 90 天前資料</button>
+            <button class="admin-data-tool" id="cleanupOldDataButton" type="button">立即清理 90 天前資料</button>
           </div>
           <p class="version-note" id="versionStatusText">目前版本檢查中</p>
         </section>
@@ -414,8 +419,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-      window.APP_ASSET_VERSION = "2026.05.27.10";
+      window.APP_ASSET_VERSION = "2026.05.28.1";
     </script>
-    <script src="app.js?v=2026.05.27.10"></script>
+    <script src="app.js?v=2026.05.28.1"></script>
   </body>
 </html>

@@ -43,7 +43,7 @@ let pendingAdminMemberId = "";
 let pendingRequestInviteCode = "";
 let securityTestRequestContext = null;
 
-const APP_VERSION = "2026.05.27.10";
+const APP_VERSION = "2026.05.28.1";
 const gameMasterMode = new URLSearchParams(window.location.search).get("gm") === "1";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
