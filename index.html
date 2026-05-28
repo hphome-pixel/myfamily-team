@@ -11,7 +11,7 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="assets/icons/APP/APP.png" />
     <link rel="icon" href="assets/icons/APP/APP.png" />
-    <link rel="stylesheet" href="styles.css?v=2026.05.28.3" />
+    <link rel="stylesheet" href="styles.css?v=2026.05.28.4" />
   </head>
   <body>
     <main class="phone-shell">
@@ -151,6 +151,20 @@
           <div class="invite-actions">
             <button class="secondary-button" id="copyInviteButton" type="button">複製連結</button>
             <button class="primary-button" id="simulateJoinButton" type="button">模擬加入</button>
+          </div>
+          <div class="invite-builder admin-only">
+            <div class="invite-builder-title">
+              <strong>傳專屬連結</strong>
+              <small>打開後會直接成為那位家人</small>
+            </div>
+            <label for="inviteMemberSelect">選擇已建立家人</label>
+            <select id="inviteMemberSelect"></select>
+            <label for="inviteMemberNameInput">或新增家人名字</label>
+            <div class="inline-action-row">
+              <input id="inviteMemberNameInput" type="text" placeholder="例如：媽媽" />
+              <button class="primary-button" id="createMemberInviteButton" type="button">產生連結</button>
+            </div>
+            <p class="version-note" id="memberInviteStatusText"></p>
           </div>
         </section>
 
@@ -441,8 +455,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-      window.APP_ASSET_VERSION = "2026.05.28.3";
+      window.APP_ASSET_VERSION = "2026.05.28.4";
     </script>
-    <script src="app.js?v=2026.05.28.3"></script>
+    <script src="app.js?v=2026.05.28.4"></script>
   </body>
 </html>

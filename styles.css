@@ -1193,6 +1193,41 @@ h2 {
   gap: 8px;
 }
 
+.invite-builder {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.invite-builder-title {
+  align-items: baseline;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.invite-builder-title small {
+  color: var(--muted);
+}
+
+.invite-builder label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.invite-builder select {
+  appearance: none;
+  background: #fffdfa;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  font: inherit;
+  min-height: 44px;
+  padding: 0 12px;
+}
+
 .sync-card {
   display: grid;
   gap: 4px;

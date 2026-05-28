@@ -44,7 +44,7 @@ let pendingAdminMemberId = "";
 let pendingRequestInviteCode = "";
 let securityTestRequestContext = null;
 
-const APP_VERSION = "2026.05.28.3";
+const APP_VERSION = "2026.05.28.4";
 const gameMasterMode = new URLSearchParams(window.location.search).get("gm") === "1";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
@@ -171,6 +171,10 @@ const customDateInput = document.querySelector("#customDateInput");
 const datePickerRow = document.querySelector(".date-picker-row");
 const inviteCode = document.querySelector("#inviteCode");
 const inviteStatusText = document.querySelector("#inviteStatusText");
+const inviteMemberSelect = document.querySelector("#inviteMemberSelect");
+const inviteMemberNameInput = document.querySelector("#inviteMemberNameInput");
+const createMemberInviteButton = document.querySelector("#createMemberInviteButton");
+const memberInviteStatusText = document.querySelector("#memberInviteStatusText");
 const syncStatusText = document.querySelector("#syncStatusText");
 const familyNameText = document.querySelector("#familyNameText");
 const profileNameInput = document.querySelector("#profileNameInput");
@@ -295,6 +299,7 @@ function renderAdminTaskFilter() {
 function renderFamilySpace() {
   inviteCode.textContent = state.inviteCode;
   inviteStatusText.textContent = `${state.members.length} 人已加入`;
+  renderInviteMembers();
   syncStatusText.textContent = remoteReady ? "Supabase 同步中" : state.backendStatus;
   familyNameText.textContent = state.familyName;
   if (profileNameInput && document.activeElement !== profileNameInput) {
@@ -329,6 +334,23 @@ function renderFamilySpace() {
     button.title = canManage ? "Admin 測試工具" : "只有 Admin 可以管理資料";
   });
   renderSoundToggle();
+}
+
+function renderInviteMembers() {
+  if (!inviteMemberSelect) return;
+  const inviteTargets = state.members.filter((member) => member.name !== state.currentUser);
+  inviteMemberSelect.innerHTML = inviteTargets.length
+    ? inviteTargets
+      .map(
+        (member) =>
+          `<option value="${escapeHtml(String(member.id || member.name))}">${escapeHtml(member.name)}${
+            member.deviceId ? "・已綁定" : ""
+          }</option>`,
+      )
+      .join("")
+    : `<option value="">先新增家人名字</option>`;
+  inviteMemberSelect.disabled = !inviteTargets.length;
+  if (createMemberInviteButton) createMemberInviteButton.disabled = state.role !== "admin";
 }
 
 function renderSoundToggle() {
@@ -619,12 +641,25 @@ function applyMemberCodeFromHash() {
   if (!code) return false;
   const member = state.members.find((item) => item.memberCode === code);
   if (!member) return false;
+  if (isMemberBoundToAnotherDevice(member)) {
+    alert("這個身份已經綁定另一台裝置。若是換手機或選錯人，請 Admin 先重設裝置綁定。");
+    localStorage.removeItem(identityStorageKey);
+    localStorage.removeItem(memberIdStorageKey);
+    showIdentityPicker();
+    return true;
+  }
   state.currentUser = member.name;
   state.selectedMember = member.name;
+  member.deviceId = currentDeviceId();
+  updateRemoteMemberDevice(member);
   saveMemberSession(member);
   applyCurrentRole();
   hideIdentityPicker();
   return true;
+}
+
+function isMemberBoundToAnotherDevice(member) {
+  return Boolean(member?.deviceId && member.deviceId !== currentDeviceId());
 }
 
 function ensureIdentity() {
@@ -921,6 +956,9 @@ async function useIdentity(name) {
   } else if (!member.deviceId || member.deviceId === deviceId) {
     member.deviceId = deviceId;
     await updateRemoteMemberDevice(member);
+  } else {
+    alert("這個身份已經綁定另一台裝置。若是換手機或選錯人，請 Admin 先重設裝置綁定。");
+    return;
   }
   state.currentUser = member.name;
   state.selectedMember = member.name;
@@ -1804,6 +1842,55 @@ async function regenerateMemberInviteLink() {
   } catch {
     setMemberAdminStatus("已重新產生身份連結，但複製失敗。");
   }
+}
+
+function selectedInviteMember() {
+  const selected = inviteMemberSelect?.value || "";
+  if (!selected) return null;
+  return state.members.find((member) => sameId(member.id, selected) || member.name === selected) || null;
+}
+
+async function createMemberInvite() {
+  if (state.role !== "admin") return;
+  if (!memberInviteStatusText) return;
+  const typedName = inviteMemberNameInput.value.trim();
+  let member = typedName ? state.members.find((item) => item.name === typedName) : selectedInviteMember();
+  if (!member && typedName) {
+    member = {
+      name: typedName,
+      short: avatarOptions[state.members.length % avatarOptions.length],
+      tone: "tone-blue",
+      health: "😐",
+      note: "等待加入",
+      role: "member",
+    };
+    state.members.push(member);
+    const savedMember = await insertRemoteMember(member);
+    if (savedMember) member = Object.assign(member, savedMember);
+    addFeed(`新增成員：${member.name}`);
+  }
+  if (!member) {
+    memberInviteStatusText.textContent = "請選一位家人，或輸入新名字。";
+    return;
+  }
+  memberInviteStatusText.textContent = "正在產生專屬連結...";
+  const code = await ensureMemberCode(member);
+  if (!code) {
+    memberInviteStatusText.textContent = "產生失敗，請先確認 Supabase 已跑 member code SQL。";
+    return;
+  }
+  const linkedMember = memberFor(member.id, member.name) || { ...member, memberCode: code };
+  try {
+    await navigator.clipboard.writeText(memberInviteUrl(linkedMember));
+    memberInviteStatusText.textContent = linkedMember.deviceId
+      ? `已複製 ${linkedMember.name} 的連結。若要換手機，請先重設裝置綁定。`
+      : `已複製 ${linkedMember.name} 的專屬連結。`;
+  } catch {
+    memberInviteStatusText.textContent = "連結已產生，但複製失敗。請再試一次。";
+  }
+  inviteMemberNameInput.value = "";
+  markSynced();
+  render();
 }
 
 function openDeleteFamilyConfirm() {
@@ -3002,6 +3089,17 @@ document.querySelector("#copyInviteButton").addEventListener("click", async () =
   } catch {
     inviteStatusText.textContent = "邀請碼可分享";
   }
+});
+
+createMemberInviteButton.addEventListener("click", () => {
+  createMemberInvite().catch((error) => {
+    memberInviteStatusText.textContent = "產生失敗，請稍後再試。";
+    setSyncError("Create member invite failed", error);
+  });
+});
+
+inviteMemberNameInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") createMemberInviteButton.click();
 });
 
 document.querySelector("#simulateJoinButton").addEventListener("click", async () => {
