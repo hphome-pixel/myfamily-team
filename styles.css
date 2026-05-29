@@ -1088,6 +1088,10 @@ h2 {
 }
 
 .data-actions {
+  align-items: center;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
   margin-top: 4px;
 }
 
@@ -1343,6 +1347,38 @@ h2 {
 
 .admin-actions .compact-action-button {
   min-height: 40px;
+  padding: 0 14px;
+}
+
+.data-actions .version-note {
+  justify-self: end;
+  margin: 0;
+  text-align: right;
+}
+
+.maintenance-toggle {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 42px;
+  margin-top: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdfa;
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.maintenance-toggle small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.maintenance-actions {
+  margin-top: 8px;
 }
 
 .version-note {

@@ -44,8 +44,9 @@ let lastRemoteSignature = "";
 let pendingAdminMemberId = "";
 let pendingRequestInviteCode = "";
 let securityTestRequestContext = null;
+let maintenanceOpen = false;
 
-const APP_VERSION = "2026.05.29.2";
+const APP_VERSION = "2026.05.29.3";
 const gameMasterMode = new URLSearchParams(window.location.search).get("gm") === "1";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
@@ -195,6 +196,8 @@ const updateToastText = document.querySelector("#updateToastText");
 const updateNowButton = document.querySelector("#updateNowButton");
 const familyManageBlock = document.querySelector("#familyManageBlock");
 const devTestBlock = document.querySelector("#devTestBlock");
+const maintenanceToggleButton = document.querySelector("#maintenanceToggleButton");
+const maintenanceActions = document.querySelector("#maintenanceActions");
 const adminDataTools = document.querySelectorAll(".admin-data-tool");
 const resetDemoButton = document.querySelector("#resetDemoButton");
 const clearDemoButton = document.querySelector("#clearDemoButton");
@@ -321,6 +324,11 @@ function renderFamilySpace() {
   adminDataTools.forEach((button) => {
     button.classList.toggle("is-hidden", !canManage);
   });
+  if (maintenanceActions) maintenanceActions.classList.toggle("is-hidden", !maintenanceOpen || !canManage);
+  if (maintenanceToggleButton) {
+    maintenanceToggleButton.setAttribute("aria-expanded", String(maintenanceOpen && canManage));
+    maintenanceToggleButton.querySelector("small").textContent = maintenanceOpen && canManage ? "收合" : "展開";
+  }
   document.querySelector("#saveFamilyNameButton").disabled = !canManage;
   document.querySelector("#deleteFamilyButton").disabled = !canManage;
   if (versionStatusText && !versionStatusText.dataset.updateState) {
@@ -3234,6 +3242,12 @@ familyNameInput.addEventListener("keydown", (event) => {
 document.querySelector("#deleteFamilyButton").addEventListener("click", openDeleteFamilyConfirm);
 
 document.querySelector("#checkUpdateButton").addEventListener("click", () => checkForAppUpdate());
+
+maintenanceToggleButton.addEventListener("click", () => {
+  if (state.role !== "admin") return;
+  maintenanceOpen = !maintenanceOpen;
+  render();
+});
 
 updateNowButton.addEventListener("click", applyAppUpdate);
 
