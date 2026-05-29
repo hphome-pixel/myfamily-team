@@ -920,6 +920,22 @@ h2 {
   font-weight: 900;
 }
 
+.icon-mini-button {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  min-width: 42px;
+  padding: 4px;
+}
+
+.icon-mini-button img {
+  display: block;
+  height: 34px;
+  width: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
 .feed-main,
 .member-main,
 .chat-main {
@@ -1244,6 +1260,10 @@ h2 {
 }
 
 .sound-toggle {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
   width: 100%;
   padding: 13px;
   border: 1px solid var(--line);
@@ -1251,6 +1271,13 @@ h2 {
   background: var(--soft);
   color: var(--ink);
   font-weight: 900;
+}
+
+.sound-toggle img {
+  height: 34px;
+  width: 34px;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .sound-toggle.active {

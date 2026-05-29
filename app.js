@@ -44,7 +44,7 @@ let pendingAdminMemberId = "";
 let pendingRequestInviteCode = "";
 let securityTestRequestContext = null;
 
-const APP_VERSION = "2026.05.28.5";
+const APP_VERSION = "2026.05.29.1";
 const gameMasterMode = new URLSearchParams(window.location.search).get("gm") === "1";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
@@ -94,6 +94,7 @@ const avatarOptions = [
   "assets/icons/Character/Character17.png",
   "assets/icons/Character/Character18.png",
   "assets/icons/Character/Character19.png",
+  "assets/icons/Character/Character20.png",
 ];
 
 preloadAvatarImages();
@@ -355,13 +356,23 @@ function renderInviteMembers() {
 
 function renderSoundToggle() {
   if (!soundToggleButton) return;
-  soundToggleButton.textContent = soundEnabled ? "提示音已開啟" : "開啟提示音";
+  soundToggleButton.innerHTML = settingIconMarkup(
+    soundEnabled ? "assets/icons/Urgent/提示音_開.png" : "assets/icons/Urgent/提示音_關.png",
+    soundEnabled ? "提示音已開啟" : "開啟提示音",
+  );
   soundToggleButton.classList.toggle("active", soundEnabled);
   if (!pushToggleButton) return;
   const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
-  pushToggleButton.textContent = supported ? (pushEnabled ? "系統通知已開啟" : "開啟系統通知") : "此裝置不支援系統通知";
+  pushToggleButton.innerHTML = settingIconMarkup(
+    pushEnabled ? "assets/icons/Urgent/系統通知_開.png" : "assets/icons/Urgent/系統通知_關.png",
+    supported ? (pushEnabled ? "系統通知已開啟" : "開啟系統通知") : "此裝置不支援系統通知",
+  );
   pushToggleButton.classList.toggle("active", pushEnabled);
   pushToggleButton.disabled = !supported;
+}
+
+function settingIconMarkup(src, label) {
+  return `<img src="${escapeHtml(src)}" alt="" /><span>${escapeHtml(label)}</span>`;
 }
 
 function renderIdentityOptions() {
@@ -449,7 +460,9 @@ function renderMembers() {
           ${
             canAdminManage
               ? `<div class="member-actions">
-                  <button class="mini-button" type="button" data-admin-member="${escapeHtml(String(member.id || ""))}" data-admin-member-name="${escapeHtml(member.name)}">管理</button>
+                  <button class="mini-button icon-mini-button" type="button" data-admin-member="${escapeHtml(String(member.id || ""))}" data-admin-member-name="${escapeHtml(member.name)}" aria-label="管理 ${escapeHtml(member.name)}">
+                    <img src="assets/icons/Urgent/管理.png" alt="" />
+                  </button>
                   <button class="delete-button" type="button" data-delete-member="${escapeHtml(member.name)}">×</button>
                 </div>`
               : ""
@@ -1884,7 +1897,7 @@ async function createMemberInvite() {
       role: "member",
     };
     state.members.push(member);
-    const savedMember = await insertRemoteMember(member);
+    const savedMember = await insertRemoteMember(member, { bindDevice: false });
     if (savedMember) member = Object.assign(member, savedMember);
     addFeed(`新增成員：${member.name}`);
   }
@@ -2312,7 +2325,7 @@ async function updateRemoteMemberDevice(member) {
   else await loadRemoteData(false);
 }
 
-async function insertRemoteMember(member) {
+async function insertRemoteMember(member, { bindDevice = true } = {}) {
   if (!remoteReady || !familyId) return;
   const payload = {
     family_id: familyId,
@@ -2321,9 +2334,9 @@ async function insertRemoteMember(member) {
     role: member.role || "member",
     health: member.health,
     note: member.note,
-    device_id: member.deviceId || currentDeviceId(),
     member_code: member.memberCode || generateMemberCode(),
   };
+  if (bindDevice) payload.device_id = member.deviceId || currentDeviceId();
   let result = await supabaseClient.from("members").insert(payload).select().single();
   if (result.error && isMissingColumnError(result.error)) {
     delete payload.member_code;
