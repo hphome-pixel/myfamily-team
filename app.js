@@ -38,13 +38,14 @@ let lastSeenMessageId = null;
 let lastSeenTaskId = null;
 let hasLoadedRemoteOnce = false;
 let pushEnabled = false;
+let pushStatus = "";
 let pendingAvatarMemberName = null;
 let lastRemoteSignature = "";
 let pendingAdminMemberId = "";
 let pendingRequestInviteCode = "";
 let securityTestRequestContext = null;
 
-const APP_VERSION = "2026.05.29.1";
+const APP_VERSION = "2026.05.29.2";
 const gameMasterMode = new URLSearchParams(window.location.search).get("gm") === "1";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
@@ -358,21 +359,33 @@ function renderSoundToggle() {
   if (!soundToggleButton) return;
   soundToggleButton.innerHTML = settingIconMarkup(
     soundEnabled ? "assets/icons/Urgent/提示音_開.png" : "assets/icons/Urgent/提示音_關.png",
-    soundEnabled ? "提示音已開啟" : "開啟提示音",
+    "提示音",
+    soundEnabled ? "已開" : "未開",
   );
   soundToggleButton.classList.toggle("active", soundEnabled);
   if (!pushToggleButton) return;
   const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  const permission = supported ? Notification.permission : "unsupported";
+  const pushLabel =
+    pushStatus ||
+    (supported
+      ? pushEnabled
+        ? "已開"
+        : permission === "denied"
+          ? "已封鎖"
+          : "未開"
+      : "不支援");
   pushToggleButton.innerHTML = settingIconMarkup(
     pushEnabled ? "assets/icons/Urgent/系統通知_開.png" : "assets/icons/Urgent/系統通知_關.png",
-    supported ? (pushEnabled ? "系統通知已開啟" : "開啟系統通知") : "此裝置不支援系統通知",
+    "系統通知",
+    pushLabel,
   );
   pushToggleButton.classList.toggle("active", pushEnabled);
   pushToggleButton.disabled = !supported;
 }
 
-function settingIconMarkup(src, label) {
-  return `<img src="${escapeHtml(src)}" alt="" /><span>${escapeHtml(label)}</span>`;
+function settingIconMarkup(src, title, detail) {
+  return `<img src="${escapeHtml(src)}" alt="" /><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(detail)}</small></span>`;
 }
 
 function renderIdentityOptions() {
@@ -1293,6 +1306,7 @@ function uint8ArrayToUrlBase64(value) {
 
 async function enablePushNotifications() {
   if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+    pushStatus = "不支援";
     state.backendStatus = "此裝置不支援系統通知";
     render();
     return;
@@ -1301,50 +1315,68 @@ async function enablePushNotifications() {
     showIdentityPicker();
     return;
   }
-  const permission = await Notification.requestPermission();
+  pushStatus = "開啟中";
+  pushToggleButton.disabled = true;
+  renderSoundToggle();
+  let permission = Notification.permission;
+  if (permission !== "granted") permission = await Notification.requestPermission();
   if (permission !== "granted") {
+    pushStatus = permission === "denied" ? "已封鎖" : "未允許";
+    pushToggleButton.disabled = false;
     state.backendStatus = "系統通知未允許";
     render();
     return;
   }
-  const registration = await navigator.serviceWorker.ready;
-  let subscription = await registration.pushManager.getSubscription();
-  const existingKey = subscription?.options?.applicationServerKey
-    ? uint8ArrayToUrlBase64(subscription.options.applicationServerKey)
-    : "";
-  if (subscription && existingKey !== VAPID_PUBLIC_KEY) {
-    await subscription.unsubscribe();
-    subscription = null;
-  }
-  subscription =
-    subscription ||
-    (await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-    }));
-  if (remoteReady && familyId) {
-    const memberId = currentMemberId();
-    const payload = {
-      endpoint: subscription.endpoint,
-      family_id: familyId,
-      member_name: state.currentUser,
-      member_id: memberId || null,
-      subscription: subscription.toJSON(),
-    };
-    let result = await supabaseClient.from("push_subscriptions").upsert(payload, { onConflict: "endpoint" });
-    if (result.error && isMissingColumnError(result.error)) {
-      result = await supabaseClient
-        .from("push_subscriptions")
-        .upsert(withoutIdColumns(payload, ["member_id"]), { onConflict: "endpoint" });
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+    const existingKey = subscription?.options?.applicationServerKey
+      ? uint8ArrayToUrlBase64(subscription.options.applicationServerKey)
+      : "";
+    if (subscription && existingKey !== VAPID_PUBLIC_KEY) {
+      await subscription.unsubscribe();
+      subscription = null;
     }
-    const { error } = result;
-    if (error) {
-      setSyncError("Push subscription sync failed", error);
-      render();
-      return;
+    subscription =
+      subscription ||
+      (await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      }));
+    if (remoteReady && familyId) {
+      const memberId = currentMemberId();
+      const payload = {
+        endpoint: subscription.endpoint,
+        family_id: familyId,
+        member_name: state.currentUser,
+        member_id: memberId || null,
+        subscription: subscription.toJSON(),
+      };
+      let result = await supabaseClient.from("push_subscriptions").upsert(payload, { onConflict: "endpoint" });
+      if (result.error && isMissingColumnError(result.error)) {
+        result = await supabaseClient
+          .from("push_subscriptions")
+          .upsert(withoutIdColumns(payload, ["member_id"]), { onConflict: "endpoint" });
+      }
+      const { error } = result;
+      if (error) {
+        pushStatus = "同步失敗";
+        pushToggleButton.disabled = false;
+        setSyncError("Push subscription sync failed", error);
+        render();
+        return;
+      }
     }
+  } catch (error) {
+    pushStatus = "開啟失敗";
+    pushToggleButton.disabled = false;
+    setSyncError("Push enable failed", error);
+    render();
+    return;
   }
   pushEnabled = true;
+  pushStatus = "";
+  pushToggleButton.disabled = false;
   localStorage.setItem(pushStorageKey, "true");
   state.backendStatus = "系統通知已開啟";
   render();

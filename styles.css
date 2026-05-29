@@ -1093,18 +1093,32 @@ h2 {
 
 .retention-summary {
   display: grid;
-  gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
   margin: 10px 0 12px;
 }
 
 .retention-summary span {
-  padding: 10px 12px;
+  display: grid;
+  gap: 2px;
+  padding: 8px 9px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.7);
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 900;
+}
+
+.retention-summary strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.retention-summary small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .family-edit-form {
@@ -1259,30 +1273,62 @@ h2 {
   line-height: 1.45;
 }
 
+.setting-toggle-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 .sound-toggle {
   align-items: center;
   display: flex;
-  justify-content: center;
-  gap: 10px;
+  justify-content: flex-start;
+  gap: 8px;
   width: 100%;
-  padding: 13px;
+  min-height: 48px;
+  padding: 7px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--soft);
   color: var(--ink);
   font-weight: 900;
+  text-align: left;
 }
 
 .sound-toggle img {
-  height: 34px;
-  width: 34px;
+  flex: 0 0 auto;
+  height: 30px;
+  width: 30px;
   border-radius: 50%;
   object-fit: cover;
+}
+
+.sound-toggle span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sound-toggle strong {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.15;
+}
+
+.sound-toggle small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .sound-toggle.active {
   border-color: var(--teal);
   background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.sound-toggle.active strong,
+.sound-toggle.active small {
   color: var(--teal);
 }
 
@@ -1293,6 +1339,10 @@ h2 {
   background: white;
   color: var(--ink);
   font-weight: 900;
+}
+
+.admin-actions .compact-action-button {
+  min-height: 40px;
 }
 
 .version-note {

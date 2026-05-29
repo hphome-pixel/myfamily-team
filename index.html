@@ -11,7 +11,7 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="assets/icons/APP/APP.png" />
     <link rel="icon" href="assets/icons/APP/APP.png" />
-    <link rel="stylesheet" href="styles.css?v=2026.05.29.1" />
+    <link rel="stylesheet" href="styles.css?v=2026.05.29.2" />
   </head>
   <body>
     <main class="phone-shell">
@@ -278,8 +278,10 @@
             </div>
           </div>
           <p class="version-note" id="profileManageStatusText"></p>
-          <button class="sound-toggle" id="soundToggleButton" type="button">開啟提示音</button>
-          <button class="sound-toggle" id="pushToggleButton" type="button">開啟系統通知</button>
+          <div class="setting-toggle-grid">
+            <button class="sound-toggle" id="soundToggleButton" type="button">開啟提示音</button>
+            <button class="sound-toggle" id="pushToggleButton" type="button">開啟系統通知</button>
+          </div>
         </section>
 
         <section class="block" id="familyManageBlock">
@@ -325,13 +327,13 @@
             <h2>資料管理</h2>
             <span>自動保留規則</span>
           </div>
-          <div class="retention-summary" aria-label="資料保存規則">
-            <span>聊天 90 天</span>
-            <span>已完成任務 90 天</span>
-            <span>未完成任務保留</span>
+          <div class="retention-summary compact-summary" aria-label="資料保存規則">
+            <span><strong>聊天</strong><small>90 天</small></span>
+            <span><strong>完成任務</strong><small>90 天</small></span>
+            <span><strong>未完成任務</strong><small>保留</small></span>
           </div>
           <div class="admin-actions data-actions">
-            <button id="checkUpdateButton" type="button">檢查更新</button>
+            <button class="compact-action-button" id="checkUpdateButton" type="button">檢查更新</button>
             <button class="admin-data-tool" id="resetDemoButton" type="button">重設示範資料</button>
             <button class="admin-data-tool" id="clearDemoButton" type="button">移除所有範例</button>
             <button class="admin-data-tool" id="cleanupOldDataButton" type="button">立即清理 90 天前資料</button>
@@ -455,8 +457,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-      window.APP_ASSET_VERSION = "2026.05.29.1";
+      window.APP_ASSET_VERSION = "2026.05.29.2";
     </script>
-    <script src="app.js?v=2026.05.29.1"></script>
+    <script src="app.js?v=2026.05.29.2"></script>
   </body>
 </html>
