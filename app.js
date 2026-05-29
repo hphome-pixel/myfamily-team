@@ -44,7 +44,7 @@ let pendingAdminMemberId = "";
 let pendingRequestInviteCode = "";
 let securityTestRequestContext = null;
 
-const APP_VERSION = "2026.05.28.4";
+const APP_VERSION = "2026.05.28.5";
 const gameMasterMode = new URLSearchParams(window.location.search).get("gm") === "1";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
@@ -640,11 +640,17 @@ function applyMemberCodeFromHash() {
   const code = memberCodeFromHash();
   if (!code) return false;
   const member = state.members.find((item) => item.memberCode === code);
-  if (!member) return false;
+  if (!member) {
+    alert("這個身份連結已失效，請重新跟 Admin 拿新的連結。");
+    cleanInviteHash();
+    showIdentityPicker();
+    return true;
+  }
   if (isMemberBoundToAnotherDevice(member)) {
     alert("這個身份已經綁定另一台裝置。若是換手機或選錯人，請 Admin 先重設裝置綁定。");
     localStorage.removeItem(identityStorageKey);
     localStorage.removeItem(memberIdStorageKey);
+    cleanInviteHash();
     showIdentityPicker();
     return true;
   }
@@ -655,11 +661,17 @@ function applyMemberCodeFromHash() {
   saveMemberSession(member);
   applyCurrentRole();
   hideIdentityPicker();
+  cleanInviteHash();
   return true;
 }
 
 function isMemberBoundToAnotherDevice(member) {
   return Boolean(member?.deviceId && member.deviceId !== currentDeviceId());
+}
+
+function cleanInviteHash() {
+  if (!location.hash.includes("join=") && !location.hash.includes("member=")) return;
+  history.replaceState(null, "", location.href.split("#")[0]);
 }
 
 function ensureIdentity() {
@@ -853,9 +865,11 @@ function showMemberAdmin(memberId, fallbackName = "") {
   copyMemberLinkButton.disabled = false;
   regenerateMemberCodeButton.disabled = false;
   setMemberAdminStatus(
-    member.memberCode
-      ? "可複製專屬身份連結給這位家人。"
-      : "尚未產生身份連結，按複製時會自動產生。",
+    member.deviceId
+      ? "這位家人已綁定裝置。換手機時請先重設，再傳新連結。"
+      : member.memberCode
+        ? "可傳專屬身份連結給這位家人。"
+        : "尚未產生身份連結，按「傳給這位家人」會自動產生。",
   );
   memberAdminLayer.classList.add("active");
   memberAdminLayer.setAttribute("aria-hidden", "false");
@@ -1785,9 +1799,10 @@ async function resetAdminMemberDevice() {
   }
   member.deviceId = "";
   await loadRemoteData(false);
-  setMemberAdminStatus("裝置綁定已重設。家人下次用新手機進入時可重新選身份。");
+  setMemberAdminStatus("裝置綁定已重設。請按「傳給這位家人」複製連結，讓家人用新手機開啟。");
   resetMemberDeviceButton.textContent = "尚未綁定裝置";
   resetMemberDeviceButton.disabled = true;
+  copyMemberLinkButton.disabled = false;
   render();
 }
 
@@ -1823,7 +1838,11 @@ async function copyMemberInviteLink() {
   const linkedMember = memberFor(member.id, member.name) || { ...member, memberCode: code };
   try {
     await navigator.clipboard.writeText(memberInviteUrl(linkedMember));
-    setMemberAdminStatus(`已複製 ${linkedMember.name} 的身份連結。`);
+    setMemberAdminStatus(
+      linkedMember.deviceId
+        ? `已複製 ${linkedMember.name} 的連結。若是換手機，請先重設裝置綁定。`
+        : `已複製 ${linkedMember.name} 的專屬連結。`,
+    );
   } catch {
     setMemberAdminStatus("複製失敗，請稍後再試。");
   }
@@ -1883,8 +1902,8 @@ async function createMemberInvite() {
   try {
     await navigator.clipboard.writeText(memberInviteUrl(linkedMember));
     memberInviteStatusText.textContent = linkedMember.deviceId
-      ? `已複製 ${linkedMember.name} 的連結。若要換手機，請先重設裝置綁定。`
-      : `已複製 ${linkedMember.name} 的專屬連結。`;
+      ? `${linkedMember.name} 已綁定裝置。連結已複製；換手機請先到管理重設。`
+      : `${linkedMember.name} 尚未綁定。專屬連結已複製，可傳給家人。`;
   } catch {
     memberInviteStatusText.textContent = "連結已產生，但複製失敗。請再試一次。";
   }
