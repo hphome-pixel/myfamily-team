@@ -48,7 +48,7 @@ let maintenanceOpen = false;
 let versionTapCount = 0;
 let versionTapTimer = null;
 
-const APP_VERSION = "2026.05.30.2";
+const APP_VERSION = "2026.05.30.3";
 const gameMasterStorageKey = "family-workspace-gm-mode";
 const gameMasterModeFromUrl = new URLSearchParams(window.location.search).get("gm") === "1";
 let gameMasterMode = gameMasterModeFromUrl || localStorage.getItem(gameMasterStorageKey) === "1";
@@ -1231,9 +1231,8 @@ function addChat(text, type = "normal", actor = state.currentUser || "系統") {
       if (error) setSyncError("Message sync failed", error);
       else {
         loadRemoteData();
-        if (type !== "task") {
-          const title = type === "emergency" ? "緊急求助" : "家庭新訊息";
-          sendPushNotification({ title, body: `${actor}：${text}`, type });
+        if (type === "normal") {
+          notifyFamilyEvent({ kind: "chat", text, actorName: actor, actorMember });
         }
       }
     });
@@ -1265,7 +1264,14 @@ async function addTask(title = state.selectedTemplate, owner = state.selectedMem
       state.tasks.unshift(fromRemoteTask(data));
       state.backendStatus = "Supabase 已連線";
       await loadRemoteData();
-      sendPushNotification({ title: "新增任務", body: `${owner}：${title}`, type: "task" });
+      notifyFamilyEvent({
+        kind: "task",
+        title,
+        owner,
+        ownerId: ownerMember?.id || "",
+        actorName: state.currentUser,
+        actorMember: authorMember,
+      });
     }
   } else {
     state.tasks.unshift(task);
@@ -1441,12 +1447,93 @@ async function sendPushNotification(payload) {
   const { error } = await supabaseClient.functions.invoke("super-function", {
     body: {
       familyId,
-      excludeMember: state.currentUser,
-      excludeMemberId: currentMemberId(),
       ...payload,
     },
   });
   if (error) console.warn("Push send failed", error);
+}
+
+function memberNotificationRef(member) {
+  return {
+    id: member?.id || "",
+    name: member?.name || "",
+  };
+}
+
+function notificationTargetsFor(event) {
+  const actor = memberNotificationRef(event.actorMember || currentMember());
+  const withoutActor = (member) => {
+    if (!member) return false;
+    if (actor.id && member.id) return !sameId(member.id, actor.id);
+    return member.name !== actor.name;
+  };
+  const everyoneElse = () => state.members.filter(withoutActor);
+
+  if (event.kind === "task") {
+    const owner = memberFor(event.ownerId || "", event.owner || "");
+    return owner && withoutActor(owner) ? [owner] : [];
+  }
+
+  if (event.kind === "checkin") {
+    if (event.target === "all") return everyoneElse();
+    const target = memberFor(event.targetId || "", event.target || "");
+    return target && withoutActor(target) ? [target] : [];
+  }
+
+  return everyoneElse();
+}
+
+function notificationPayloadFor(event, targets) {
+  const actorName = event.actorName || state.currentUser || "家人";
+  const targetNames = targets.map((member) => member.name).filter(Boolean);
+  const targetIds = targets.map((member) => member.id).filter(Boolean);
+
+  const base = {
+    type: event.kind,
+    targetMemberNames: targetNames,
+    targetMemberIds: targetIds,
+    excludeMember: actorName,
+    excludeMemberId: event.actorMember?.id || currentMemberId(),
+  };
+
+  if (event.kind === "task") {
+    return {
+      ...base,
+      title: "新增任務",
+      body: `${actorName} 指派：${event.title}`,
+    };
+  }
+
+  if (event.kind === "checkin") {
+    return {
+      ...base,
+      title: "狀態詢問",
+      body: `${actorName} 問：${event.question}`,
+    };
+  }
+
+  if (event.kind === "emergency") {
+    return {
+      ...base,
+      title: "緊急求助",
+      body: `${actorName}：請家人立刻確認。`,
+    };
+  }
+
+  return {
+    ...base,
+    title: "家庭新訊息",
+    body: `${actorName}：${event.text}`,
+  };
+}
+
+function notifyFamilyEvent(event) {
+  const targets = notificationTargetsFor(event);
+  if (!targets.length) {
+    console.info("Notification skipped: no targets", event.kind);
+    return;
+  }
+  sendPushNotification(notificationPayloadFor(event, targets));
 }
 
 function notifyRemoteChanges(messages, tasks) {
@@ -2942,6 +3029,13 @@ createTaskButton.addEventListener("click", async () => {
     state.pendingCheckin = canAnswerCheckin(checkin) ? checkin : null;
     addFeed(`詢問 ${target === "all" ? "大家" : target}：${question}`);
     addChat(`問 ${target === "all" ? "大家" : target}：${question}`, "checkin");
+    notifyFamilyEvent({
+      kind: "checkin",
+      question,
+      target,
+      actorName: state.currentUser,
+      actorMember: currentMember(),
+    });
     markSynced();
     customQuestionInput.value = "";
   }
@@ -3037,6 +3131,11 @@ document.querySelector("#sosSendButton").addEventListener("click", async () => {
   await updateRemoteMember(member);
   addFeed("按下緊急求助，已通知全部家人", "emergency");
   addChat("🚨 緊急求助：請家人立刻確認。", "emergency");
+  notifyFamilyEvent({
+    kind: "emergency",
+    actorName: state.currentUser,
+    actorMember: member,
+  });
   markSynced();
   render();
   switchScreen("chat");
