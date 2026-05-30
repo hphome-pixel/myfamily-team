@@ -48,7 +48,7 @@ let maintenanceOpen = false;
 let versionTapCount = 0;
 let versionTapTimer = null;
 
-const APP_VERSION = "2026.05.30.1";
+const APP_VERSION = "2026.05.30.2";
 const gameMasterStorageKey = "family-workspace-gm-mode";
 const gameMasterModeFromUrl = new URLSearchParams(window.location.search).get("gm") === "1";
 let gameMasterMode = gameMasterModeFromUrl || localStorage.getItem(gameMasterStorageKey) === "1";

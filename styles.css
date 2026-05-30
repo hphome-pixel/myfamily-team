@@ -1410,10 +1410,14 @@ h2 {
   grid-template-columns: repeat(5, 1fr);
   width: calc(100% + 28px);
   margin: 0 -14px;
-  padding: 6px 8px max(6px, env(safe-area-inset-bottom));
+  padding: 6px 8px calc(max(12px, env(safe-area-inset-bottom)) + 4px);
   border-top: 1px solid var(--line);
   background: rgba(255, 253, 249, 0.96);
   backdrop-filter: blur(12px);
+}
+
+.native-app .bottom-nav {
+  padding-bottom: calc(max(24px, env(safe-area-inset-bottom)) + 8px);
 }
 
 .confirm-layer {
@@ -1459,7 +1463,7 @@ h2 {
   display: grid;
   gap: 1px;
   place-items: center;
-  min-height: 66px;
+  min-height: 70px;
   border: 0;
   border-radius: 8px;
   background: transparent;
