@@ -46,7 +46,7 @@ let pendingRequestInviteCode = "";
 let securityTestRequestContext = null;
 let maintenanceOpen = false;
 
-const APP_VERSION = "2026.05.29.3";
+const APP_VERSION = "2026.05.29.4";
 const gameMasterMode = new URLSearchParams(window.location.search).get("gm") === "1";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
@@ -372,11 +372,14 @@ function renderSoundToggle() {
   );
   soundToggleButton.classList.toggle("active", soundEnabled);
   if (!pushToggleButton) return;
-  const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  const nativeApp = isNativeApp();
+  const supported = !nativeApp && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
   const permission = supported ? Notification.permission : "unsupported";
   const pushLabel =
     pushStatus ||
-    (supported
+    (nativeApp
+      ? "原生待接"
+      : supported
       ? pushEnabled
         ? "已開"
         : permission === "denied"
@@ -394,6 +397,14 @@ function renderSoundToggle() {
 
 function settingIconMarkup(src, title, detail) {
   return `<img src="${escapeHtml(src)}" alt="" /><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(detail)}</small></span>`;
+}
+
+function isNativeApp() {
+  return Boolean(window.Capacitor?.isNativePlatform?.());
+}
+
+function applyRuntimeClasses() {
+  document.body.classList.toggle("native-app", isNativeApp());
 }
 
 function renderIdentityOptions() {
@@ -744,6 +755,11 @@ function setSetupStatus(message) {
   if (setupStatusText) setupStatusText.textContent = message;
 }
 
+function describeRemoteError(error) {
+  if (!error) return "";
+  return [error.message, error.details, error.hint, error.code].filter(Boolean).join(" / ");
+}
+
 function inviteCodeFromHash() {
   const match = location.hash.match(/join=([^&]+)/);
   return match ? decodeURIComponent(match[1]).trim().toUpperCase() : "";
@@ -809,8 +825,9 @@ function supabaseFetch(input, init = {}) {
 
 function remoteRequestHeaders() {
   const context = securityTestRequestContext || {};
+  const familyHeader = context.familyId ?? familyId ?? savedFamilyId() ?? "";
   return {
-    "x-family-id": context.familyId ?? familyId ?? savedFamilyId() ?? "",
+    "x-family-id": familyHeader === "__none__" ? "" : familyHeader,
     "x-family-invite-code":
       context.inviteCode ?? pendingRequestInviteCode ?? state.inviteCode ?? savedFamilyInviteCode() ?? inviteCodeFromHash() ?? "",
     "x-member-id": context.memberId ?? localStorage.getItem(memberIdStorageKey) ?? currentMemberId(),
@@ -1313,6 +1330,12 @@ function uint8ArrayToUrlBase64(value) {
 }
 
 async function enablePushNotifications() {
+  if (isNativeApp()) {
+    pushStatus = "原生待接";
+    state.backendStatus = "App 版通知需要接 Android/iOS 原生推播";
+    render();
+    return;
+  }
   if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
     pushStatus = "不支援";
     state.backendStatus = "此裝置不支援系統通知";
@@ -1650,34 +1673,17 @@ async function createFamily() {
   const familyName = setupFamilyNameInput.value.trim() || "我的家";
   setSetupStatus("正在建立家庭...");
   let family = null;
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const inviteCode = generateInviteCode();
-    pendingRequestInviteCode = inviteCode;
-    const created = await supabaseClient
-      .from("families")
-      .insert({ name: familyName, invite_code: inviteCode, timezone: browserTimezone() })
-      .select()
-      .single();
-    if (created.error && isMissingColumnError(created.error)) {
-      const fallbackCreated = await supabaseClient
-        .from("families")
-        .insert({ name: familyName, invite_code: inviteCode })
-        .select()
-        .single();
-      if (!fallbackCreated.error) {
-        family = fallbackCreated.data;
-        family.timezone = browserTimezone();
-        break;
-      }
-    }
-    if (!created.error) {
-      family = created.data;
-      break;
-    }
-  }
+  const created = await withRemoteRequestContext({ familyId: "__none__", inviteCode: "" }, () =>
+    supabaseClient.rpc("create_family", {
+      family_name: familyName,
+      family_timezone: browserTimezone(),
+    }),
+  );
   pendingRequestInviteCode = "";
+  if (!created.error) family = created.data;
   if (!family) {
-    setSetupStatus("建立失敗，請稍後再試。");
+    const detail = describeRemoteError(created.error);
+    setSetupStatus(detail ? `建立失敗：${detail}` : "建立失敗，請稍後再試。");
     return;
   }
   await activateFamily(family);
@@ -3251,13 +3257,14 @@ maintenanceToggleButton.addEventListener("click", () => {
 
 updateNowButton.addEventListener("click", applyAppUpdate);
 
+applyRuntimeClasses();
 initSoundSetting();
 currentDeviceId();
 applySavedIdentity();
 render();
 initRemote().then(() => render());
 
-if ("serviceWorker" in navigator) {
+if (!isNativeApp() && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker
       .register("service-worker.js")

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">家裡小隊</string>
+    <string name="title_activity_main">家裡小隊</string>
+    <string name="package_name">com.hphomepixel.myfamilyteam</string>
+    <string name="custom_url_scheme">com.hphomepixel.myfamilyteam</string>
+</resources>

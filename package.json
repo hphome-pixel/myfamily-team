@@ -1,0 +1,20 @@
+{
+  "name": "myfamily-team",
+  "version": "2026.05.29.4",
+  "private": true,
+  "description": "Family shared task, chat, and status app.",
+  "scripts": {
+    "build:mobile": "powershell -ExecutionPolicy Bypass -File scripts/build-capacitor.ps1",
+    "cap:sync": "npm run build:mobile && npx cap sync",
+    "cap:open:android": "npx cap open android",
+    "cap:open:ios": "npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/core": "^7.4.3",
+    "@capacitor/ios": "^7.4.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.3"
+  }
+}

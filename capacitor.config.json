@@ -1,0 +1,12 @@
+{
+  "appId": "com.hphomepixel.myfamilyteam",
+  "appName": "家裡小隊",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "ios": {
+    "contentInset": "automatic"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}
