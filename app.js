@@ -45,9 +45,13 @@ let pendingAdminMemberId = "";
 let pendingRequestInviteCode = "";
 let securityTestRequestContext = null;
 let maintenanceOpen = false;
+let versionTapCount = 0;
+let versionTapTimer = null;
 
-const APP_VERSION = "2026.05.29.4";
-const gameMasterMode = new URLSearchParams(window.location.search).get("gm") === "1";
+const APP_VERSION = "2026.05.30.1";
+const gameMasterStorageKey = "family-workspace-gm-mode";
+const gameMasterModeFromUrl = new URLSearchParams(window.location.search).get("gm") === "1";
+let gameMasterMode = gameMasterModeFromUrl || localStorage.getItem(gameMasterStorageKey) === "1";
 const LEGACY_INVITE_CODE = "FAM-8392";
 const SUPABASE_URL = "https://krwsmhrakpcdmocckkmf.supabase.co";
 const SUPABASE_ANON_KEY =
@@ -950,6 +954,25 @@ function setVersionStatus(text, stateName = "") {
   versionStatusText.textContent = text;
   if (stateName) versionStatusText.dataset.updateState = stateName;
   else delete versionStatusText.dataset.updateState;
+}
+
+function setGameMasterMode(enabled) {
+  gameMasterMode = enabled;
+  localStorage.setItem(gameMasterStorageKey, enabled ? "1" : "0");
+  setVersionStatus(enabled ? "GM 模式已開啟" : "GM 模式已關閉", enabled ? "available" : "");
+  render();
+}
+
+function handleVersionTap() {
+  if (state.role !== "admin") return;
+  versionTapCount += 1;
+  window.clearTimeout(versionTapTimer);
+  versionTapTimer = window.setTimeout(() => {
+    versionTapCount = 0;
+  }, 1600);
+  if (versionTapCount < 5) return;
+  versionTapCount = 0;
+  setGameMasterMode(!gameMasterMode);
 }
 
 async function checkForAppUpdate({ silent = false } = {}) {
@@ -3248,6 +3271,8 @@ familyNameInput.addEventListener("keydown", (event) => {
 document.querySelector("#deleteFamilyButton").addEventListener("click", openDeleteFamilyConfirm);
 
 document.querySelector("#checkUpdateButton").addEventListener("click", () => checkForAppUpdate());
+
+versionStatusText?.addEventListener("click", handleVersionTap);
 
 maintenanceToggleButton.addEventListener("click", () => {
   if (state.role !== "admin") return;

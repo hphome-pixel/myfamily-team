@@ -1392,6 +1392,11 @@ h2 {
   line-height: 1.45;
 }
 
+#versionStatusText {
+  cursor: pointer;
+  user-select: none;
+}
+
 .admin-disabled {
   opacity: 0.55;
   pointer-events: none;
