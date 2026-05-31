@@ -1,9 +1,13 @@
 import webpush from "npm:web-push@3.6.7";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+const defaultAllowedHeaders = "authorization, x-client-info, apikey, content-type";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": defaultAllowedHeaders,
+  "Access-Control-Max-Age": "86400",
 };
 
 const firebaseScope = "https://www.googleapis.com/auth/firebase.messaging";
@@ -13,7 +17,13 @@ let cachedFirebaseToken: { value: string; expiresAt: number } | null = null;
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", {
+      headers: {
+        ...corsHeaders,
+        "Access-Control-Allow-Methods": request.headers.get("access-control-request-method") || "POST, OPTIONS",
+        "Access-Control-Allow-Headers": request.headers.get("access-control-request-headers") || defaultAllowedHeaders,
+      },
+    });
   }
 
   try {
@@ -118,7 +128,7 @@ Deno.serve(async (request) => {
       nativeSkipped = nativeTargets.length;
     }
 
-    return json({
+    const summary = {
       sent: webSent + nativeSent,
       failed: webFailed + nativeFailed,
       webSent,
@@ -126,8 +136,15 @@ Deno.serve(async (request) => {
       nativeSent,
       nativeFailed,
       nativeSkipped,
-    });
+      hasTargets,
+      targetMemberIds: [...targetIds],
+      targetMemberNames: [...targetNames],
+      excludedMember: excludeMember || excludeMemberId || null,
+    };
+    console.info("push summary", summary);
+    return json(summary);
   } catch (error) {
+    console.error("push send failed", error);
     return json({ error: error?.message || "Push send failed" }, 500);
   }
 });
