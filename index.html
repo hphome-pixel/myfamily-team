@@ -11,7 +11,7 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="assets/icons/APP/APP.png" />
     <link rel="icon" href="assets/icons/APP/APP.png" />
-    <link rel="stylesheet" href="styles.css?v=2026.05.30.4" />
+    <link rel="stylesheet" href="styles.css?v=2026.05.30.5" />
   </head>
   <body>
     <main class="phone-shell">
@@ -53,6 +53,18 @@
           <div class="setup-actions">
             <input id="joinCodeInput" type="text" placeholder="輸入邀請碼，例如 FAM-8392" />
             <button class="secondary-button" id="joinFamilyButton" type="button">加入家庭</button>
+          </div>
+          <div class="setup-consent">
+            <input id="legalConsentCheckbox" type="checkbox" />
+            <label for="legalConsentCheckbox">
+              我已閱讀並同意
+              <button type="button" data-legal-doc="terms">服務條款</button>
+              與
+              <button type="button" data-legal-doc="privacy">隱私權政策</button>
+              ，並了解
+              <button type="button" data-legal-doc="emergency">緊急按鈕限制</button>
+              。
+            </label>
           </div>
           <p class="setup-status" id="setupStatusText"></p>
         </section>
@@ -347,6 +359,19 @@
           </div>
         </section>
 
+        <section class="block">
+          <div class="block-title">
+            <h2>法律與安全</h2>
+            <span>上架前草稿</span>
+          </div>
+          <div class="legal-actions">
+            <button type="button" data-legal-doc="privacy">隱私權政策</button>
+            <button type="button" data-legal-doc="terms">服務條款</button>
+            <button type="button" data-legal-doc="emergency">緊急按鈕免責聲明</button>
+          </div>
+          <p class="version-note">正式上架前建議再由法律專業人員確認。</p>
+        </section>
+
         <section class="block" id="devTestBlock">
           <div class="block-title">
             <h2>開發測試</h2>
@@ -449,6 +474,16 @@
         </div>
       </div>
 
+      <div class="confirm-layer legal-layer" id="legalDocLayer" aria-hidden="true">
+        <div class="confirm-card legal-card">
+          <div class="legal-card-title">
+            <strong id="legalDocTitle">法律文件</strong>
+            <button class="icon-close-button" id="legalDocCloseButton" type="button" aria-label="關閉">×</button>
+          </div>
+          <div class="legal-doc-content" id="legalDocContent"></div>
+        </div>
+      </div>
+
       <div class="confirm-layer" id="cleanupOldDataConfirm" aria-hidden="true">
         <div class="confirm-card">
           <strong>確定清理 90 天前資料？</strong>
@@ -463,8 +498,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-      window.APP_ASSET_VERSION = "2026.05.30.4";
+      window.APP_ASSET_VERSION = "2026.05.30.5";
     </script>
-    <script src="app.js?v=2026.05.30.4"></script>
+    <script src="app.js?v=2026.05.30.5"></script>
   </body>
 </html>

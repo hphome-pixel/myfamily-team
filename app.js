@@ -50,7 +50,7 @@ let maintenanceOpen = false;
 let versionTapCount = 0;
 let versionTapTimer = null;
 
-const APP_VERSION = "2026.05.30.4";
+const APP_VERSION = "2026.05.30.5";
 const gameMasterStorageKey = "family-workspace-gm-mode";
 const gameMasterModeFromUrl = new URLSearchParams(window.location.search).get("gm") === "1";
 let gameMasterMode = gameMasterModeFromUrl || localStorage.getItem(gameMasterStorageKey) === "1";
@@ -166,6 +166,7 @@ const setupLayer = document.querySelector("#setupLayer");
 const setupFamilyNameInput = document.querySelector("#setupFamilyNameInput");
 const joinCodeInput = document.querySelector("#joinCodeInput");
 const setupStatusText = document.querySelector("#setupStatusText");
+const legalConsentCheckbox = document.querySelector("#legalConsentCheckbox");
 const avatarLayer = document.querySelector("#avatarLayer");
 const avatarChoiceGrid = document.querySelector("#avatarChoiceGrid");
 const memberAdminLayer = document.querySelector("#memberAdminLayer");
@@ -211,6 +212,9 @@ const addDemoTaskButton = document.querySelector("#addDemoTaskButton");
 const cleanupOldDataButton = document.querySelector("#cleanupOldDataButton");
 const securityIsolationTestButton = document.querySelector("#securityIsolationTestButton");
 const securityIsolationTestStatus = document.querySelector("#securityIsolationTestStatus");
+const legalDocLayer = document.querySelector("#legalDocLayer");
+const legalDocTitle = document.querySelector("#legalDocTitle");
+const legalDocContent = document.querySelector("#legalDocContent");
 const identityStorageKey = "family-workspace-current-user";
 const memberIdStorageKey = "family-workspace-current-member-id";
 const deviceStorageKey = "family-workspace-device-id";
@@ -222,6 +226,129 @@ const demoCleanupKey = "family-workspace-demo-cleaned";
 const demoMemberNames = ["Sam", "爸爸", "姐姐", "媽媽"];
 const guestMember = { name: "訪客", short: "訪", tone: "tone-blue", health: "😐", note: "" };
 const VAPID_PUBLIC_KEY = "BIdhbPfu0Zf-pR8_NsgcDPThj8sdLCe78ZbwEF9DzxFRuf4wTPA7n07hEDn8EB6jsE5M6V0LiDSUQAyRiQZWKZo";
+
+const legalDocuments = {
+  privacy: {
+    title: "隱私權政策",
+    sections: [
+      {
+        heading: "我們會保存的家庭資料",
+        items: [
+          "家庭名稱、邀請碼、家人暱稱、系統頭像選項、角色權限。",
+          "任務內容、指派對象、日期、完成狀態、建立者。",
+          "家庭聊天、狀態詢問、狀態回報和緊急求助訊息。",
+          "裝置識別碼、推播 token、系統通知設定與基本同步紀錄。",
+        ],
+      },
+      {
+        heading: "資料用途",
+        items: [
+          "讓同一家庭成員同步查看任務、聊天、狀態和通知。",
+          "發送任務、聊天、狀態詢問與緊急求助通知。",
+          "維護服務穩定、排查錯誤、避免不同家庭資料混在一起。",
+        ],
+      },
+      {
+        heading: "資料保存與刪除",
+        items: [
+          "聊天紀錄預設保留 90 天。",
+          "已完成任務預設保留 90 天，未完成任務會保留到完成或刪除。",
+          "Admin 可以刪除家庭、家人、任務、示範資料與過期資料。",
+          "刪除家庭後，該家庭的家人、任務、聊天與推播裝置資料會一併移除。",
+        ],
+      },
+      {
+        heading: "第三方服務",
+        items: [
+          "本服務目前使用 Supabase 保存家庭資料與同步狀態。",
+          "Android 原生通知使用 Firebase Cloud Messaging 傳送推播。",
+          "我們不會出售家庭內容，也不會用家庭聊天或健康狀態做廣告定向。",
+        ],
+      },
+      {
+        heading: "未成年人",
+        items: [
+          "本服務不是設計給 13 歲以下兒童單獨使用。",
+          "未成年人使用時，應由家長或監護人建立家庭並管理成員。",
+        ],
+      },
+    ],
+  },
+  terms: {
+    title: "服務條款",
+    sections: [
+      {
+        heading: "服務內容",
+        items: [
+          "家裡小隊提供家庭成員共用的任務、聊天、狀態詢問、推播通知與家庭管理功能。",
+          "使用者需自行確認家庭成員、任務內容與通知接收對象是否正確。",
+        ],
+      },
+      {
+        heading: "使用規則",
+        items: [
+          "不得使用本服務傳送違法、騷擾、威脅、詐騙或侵犯他人權利的內容。",
+          "邀請碼和專屬連結應只分享給可信任的家庭成員。",
+          "Admin 應負責管理家庭成員、刪除錯誤資料和處理裝置綁定問題。",
+        ],
+      },
+      {
+        heading: "服務限制",
+        items: [
+          "網路、裝置、省電設定、第三方服務或平台政策可能影響同步與推播。",
+          "我們會盡力維持服務穩定，但不保證任何通知都能即時或一定送達。",
+        ],
+      },
+      {
+        heading: "付費與訂閱",
+        items: [
+          "若未來提供付費或訂閱方案，價格、家庭共用範圍、取消與退款方式會在購買前清楚顯示。",
+          "透過 Apple 或 Google 購買的訂閱，取消與退款通常依平台規則處理。",
+        ],
+      },
+      {
+        heading: "條款更新",
+        items: [
+          "我們可能因功能、法規或安全需求更新本條款。",
+          "重大變更會盡量在 App 內或上架頁面提醒使用者。",
+        ],
+      },
+    ],
+  },
+  emergency: {
+    title: "緊急按鈕免責聲明",
+    sections: [
+      {
+        heading: "緊急按鈕的用途",
+        items: [
+          "緊急按鈕只會通知目前家庭中的其他成員，並在家庭聊天中留下求助訊息。",
+          "它是家庭內提醒工具，不是醫療警報系統，也不是官方緊急通報服務。",
+        ],
+      },
+      {
+        heading: "不會自動聯絡官方單位",
+        items: [
+          "按下緊急按鈕不會自動撥打 911、119、110、醫院、警察或消防單位。",
+          "遇到生命危險、火災、犯罪、嚴重受傷或醫療緊急情況，請立即撥打當地緊急電話。",
+        ],
+      },
+      {
+        heading: "通知可能延遲或失敗",
+        items: [
+          "推播可能受到網路、手機電量、省電模式、通知權限、系統設定或第三方服務影響。",
+          "家人沒有看到通知時，應改用電話、簡訊或其他可靠方式聯絡。",
+        ],
+      },
+      {
+        heading: "避免誤觸",
+        items: [
+          "請只在真的需要家人立即注意時使用緊急按鈕。",
+          "若誤觸，請在家庭聊天中立即說明狀況。",
+        ],
+      },
+    ],
+  },
+};
 
 function switchScreen(name) {
   Object.entries(screens).forEach(([screenName, screen]) => {
@@ -772,6 +899,17 @@ function hideSetupPicker() {
 
 function setSetupStatus(message) {
   if (setupStatusText) setupStatusText.textContent = message;
+}
+
+function hasAcceptedLegalTerms() {
+  return Boolean(legalConsentCheckbox?.checked);
+}
+
+function requireLegalConsent() {
+  if (hasAcceptedLegalTerms()) return true;
+  setSetupStatus("請先勾選同意服務條款與隱私權政策。");
+  legalConsentCheckbox?.focus();
+  return false;
 }
 
 function describeRemoteError(error) {
@@ -1700,6 +1838,35 @@ function notifyRemoteChanges(messages, tasks) {
   lastSeenTaskId = newestTask?.id || lastSeenTaskId;
 }
 
+function legalDocumentMarkup(document) {
+  return document.sections
+    .map(
+      (section) => `
+        <section>
+          <h3>${escapeHtml(section.heading)}</h3>
+          <ul>
+            ${section.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+          </ul>
+        </section>
+      `,
+    )
+    .join("");
+}
+
+function openLegalDocument(key) {
+  const document = legalDocuments[key];
+  if (!document || !legalDocLayer || !legalDocTitle || !legalDocContent) return;
+  legalDocTitle.textContent = document.title;
+  legalDocContent.innerHTML = legalDocumentMarkup(document);
+  legalDocLayer.classList.add("active");
+  legalDocLayer.setAttribute("aria-hidden", "false");
+}
+
+function closeLegalDocument() {
+  legalDocLayer?.classList.remove("active");
+  legalDocLayer?.setAttribute("aria-hidden", "true");
+}
+
 function sameId(a, b) {
   return String(a) === String(b);
 }
@@ -1921,6 +2088,7 @@ async function findFamilyById(id) {
 
 async function createFamily() {
   if (!supabaseClient) return;
+  if (!requireLegalConsent()) return;
   const familyName = setupFamilyNameInput.value.trim() || "我的家";
   setSetupStatus("正在建立家庭...");
   let family = null;
@@ -1943,6 +2111,7 @@ async function createFamily() {
 
 async function joinFamily() {
   if (!supabaseClient) return;
+  if (!requireLegalConsent()) return;
   const inviteCode = normalizeInviteCode(joinCodeInput.value);
   if (!inviteCode) {
     setSetupStatus("請輸入邀請碼。");
@@ -3529,6 +3698,16 @@ maintenanceToggleButton.addEventListener("click", () => {
   if (state.role !== "admin") return;
   maintenanceOpen = !maintenanceOpen;
   render();
+});
+
+document.querySelectorAll("[data-legal-doc]").forEach((button) => {
+  button.addEventListener("click", () => openLegalDocument(button.dataset.legalDoc));
+});
+
+document.querySelector("#legalDocCloseButton").addEventListener("click", closeLegalDocument);
+
+legalDocLayer?.addEventListener("click", (event) => {
+  if (event.target === legalDocLayer) closeLegalDocument();
 });
 
 updateNowButton.addEventListener("click", applyAppUpdate);

@@ -1,6 +1,6 @@
 {
   "name": "myfamily-team",
-  "version": "2026.05.30.4",
+  "version": "2026.05.30.5",
   "private": true,
   "description": "Family shared task, chat, and status app.",
   "scripts": {
