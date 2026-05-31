@@ -39,6 +39,8 @@ let lastSeenTaskId = null;
 let hasLoadedRemoteOnce = false;
 let pushEnabled = false;
 let pushStatus = "";
+let nativePushToken = "";
+let nativePushListenersReady = false;
 let pendingAvatarMemberName = null;
 let lastRemoteSignature = "";
 let pendingAdminMemberId = "";
@@ -48,7 +50,7 @@ let maintenanceOpen = false;
 let versionTapCount = 0;
 let versionTapTimer = null;
 
-const APP_VERSION = "2026.05.30.3";
+const APP_VERSION = "2026.05.30.4";
 const gameMasterStorageKey = "family-workspace-gm-mode";
 const gameMasterModeFromUrl = new URLSearchParams(window.location.search).get("gm") === "1";
 let gameMasterMode = gameMasterModeFromUrl || localStorage.getItem(gameMasterStorageKey) === "1";
@@ -377,13 +379,18 @@ function renderSoundToggle() {
   soundToggleButton.classList.toggle("active", soundEnabled);
   if (!pushToggleButton) return;
   const nativeApp = isNativeApp();
-  const supported = !nativeApp && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
-  const permission = supported ? Notification.permission : "unsupported";
+  const nativeSupported = nativeApp && Boolean(nativePushPlugin()) && ["android", "ios"].includes(nativePlatform());
+  const browserSupported =
+    !nativeApp && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  const supported = nativeSupported || browserSupported;
+  const permission = browserSupported ? Notification.permission : "unsupported";
   const pushLabel =
     pushStatus ||
-    (nativeApp
-      ? "原生待接"
-      : supported
+    (nativeSupported
+      ? pushEnabled
+        ? "已開"
+        : "未開"
+      : browserSupported
       ? pushEnabled
         ? "已開"
         : permission === "denied"
@@ -405,6 +412,14 @@ function settingIconMarkup(src, title, detail) {
 
 function isNativeApp() {
   return Boolean(window.Capacitor?.isNativePlatform?.());
+}
+
+function nativePlatform() {
+  return window.Capacitor?.getPlatform?.() || "";
+}
+
+function nativePushPlugin() {
+  return window.Capacitor?.Plugins?.PushNotifications || null;
 }
 
 function applyRuntimeClasses() {
@@ -1293,7 +1308,12 @@ function setSyncError(label, error) {
 
 function initSoundSetting() {
   soundEnabled = localStorage.getItem(soundStorageKey) === "true";
-  pushEnabled = localStorage.getItem(pushStorageKey) === "true" && Notification?.permission === "granted";
+  pushEnabled = localStorage.getItem(pushStorageKey) === "true";
+  if (!isNativeApp()) {
+    const browserNotificationPermission =
+      typeof Notification !== "undefined" ? Notification.permission : "unsupported";
+    pushEnabled = pushEnabled && browserNotificationPermission === "granted";
+  }
 }
 
 async function enableSound() {
@@ -1360,8 +1380,12 @@ function uint8ArrayToUrlBase64(value) {
 
 async function enablePushNotifications() {
   if (isNativeApp()) {
-    pushStatus = "原生待接";
-    state.backendStatus = "App 版通知需要接 Android/iOS 原生推播";
+    await enableNativePushNotifications();
+    return;
+  }
+  if (typeof Notification === "undefined") {
+    pushStatus = "不支援";
+    state.backendStatus = "此裝置不支援系統通知";
     render();
     return;
   }
@@ -1440,6 +1464,123 @@ async function enablePushNotifications() {
   localStorage.setItem(pushStorageKey, "true");
   state.backendStatus = "系統通知已開啟";
   render();
+}
+
+async function enableNativePushNotifications() {
+  const PushNotifications = nativePushPlugin();
+  const platform = nativePlatform();
+  if (!PushNotifications || !["android", "ios"].includes(platform)) {
+    pushStatus = "原生不支援";
+    state.backendStatus = "此 App 版本尚未接原生推播";
+    render();
+    return;
+  }
+  if (!state.currentUser) {
+    showIdentityPicker();
+    return;
+  }
+  if (!remoteReady || !familyId) {
+    pushStatus = "稍後再試";
+    state.backendStatus = "Supabase 尚未同步，稍後再開通知";
+    render();
+    return;
+  }
+
+  pushStatus = "開啟中";
+  pushToggleButton.disabled = true;
+  renderSoundToggle();
+
+  try {
+    setupNativePushListeners();
+    const permission = await PushNotifications.requestPermissions();
+    if (permission.receive !== "granted") {
+      pushStatus = "未允許";
+      pushToggleButton.disabled = false;
+      state.backendStatus = "原生系統通知未允許";
+      render();
+      return;
+    }
+    await PushNotifications.register();
+    pushEnabled = true;
+    pushStatus = "等待 token";
+    localStorage.setItem(pushStorageKey, "true");
+    state.backendStatus = "正在註冊原生推播";
+  } catch (error) {
+    pushStatus = "開啟失敗";
+    pushToggleButton.disabled = false;
+    setSyncError("Native push enable failed", error);
+  }
+  render();
+}
+
+async function initNativePushIfEnabled() {
+  if (!pushEnabled || !isNativeApp() || !state.currentUser || !remoteReady || !familyId) return;
+  const PushNotifications = nativePushPlugin();
+  const platform = nativePlatform();
+  if (!PushNotifications || !["android", "ios"].includes(platform)) return;
+  try {
+    setupNativePushListeners();
+    const permission = await PushNotifications.checkPermissions();
+    if (permission.receive !== "granted") return;
+    await PushNotifications.register();
+  } catch (error) {
+    console.warn("Native push init skipped", error);
+  }
+}
+
+function setupNativePushListeners() {
+  if (nativePushListenersReady) return;
+  const PushNotifications = nativePushPlugin();
+  if (!PushNotifications) return;
+  nativePushListenersReady = true;
+
+  PushNotifications.addListener("registration", async (token) => {
+    nativePushToken = token.value || "";
+    pushEnabled = Boolean(nativePushToken);
+    pushStatus = nativePushToken ? "" : "無 token";
+    pushToggleButton.disabled = false;
+    localStorage.setItem(pushStorageKey, String(pushEnabled));
+    if (nativePushToken) await syncNativePushToken(nativePushToken);
+    render();
+  });
+
+  PushNotifications.addListener("registrationError", (error) => {
+    pushStatus = "註冊失敗";
+    pushToggleButton.disabled = false;
+    setSyncError("Native push registration failed", error);
+    render();
+  });
+
+  PushNotifications.addListener("pushNotificationReceived", (notification) => {
+    playTone(notification?.data?.type === "emergency" ? "emergency" : "message");
+  });
+
+  PushNotifications.addListener("pushNotificationActionPerformed", () => {
+    switchScreen("chat");
+  });
+}
+
+async function syncNativePushToken(token = nativePushToken) {
+  if (!token || !remoteReady || !familyId || !state.currentUser) return;
+  const memberId = currentMemberId();
+  const payload = {
+    family_id: familyId,
+    member_id: memberId || null,
+    member_name: state.currentUser,
+    device_id: currentDeviceId(),
+    platform: nativePlatform(),
+    token,
+    enabled: true,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabaseClient.from("native_push_tokens").upsert(payload, { onConflict: "token" });
+  if (error) {
+    pushStatus = "同步失敗";
+    setSyncError("Native push token sync failed", error);
+    return;
+  }
+  pushStatus = "";
+  state.backendStatus = "原生通知已開啟";
 }
 
 async function sendPushNotification(payload) {
@@ -1894,6 +2035,7 @@ async function renameMember(member, nextName) {
       supabaseClient.from("tasks").update({ author: cleanName }).eq("family_id", familyId).eq("author", oldName),
       supabaseClient.from("messages").update({ actor: cleanName }).eq("family_id", familyId).eq("actor", oldName),
       supabaseClient.from("push_subscriptions").update({ member_name: cleanName }).eq("family_id", familyId).eq("member_name", oldName),
+      supabaseClient.from("native_push_tokens").update({ member_name: cleanName }).eq("family_id", familyId).eq("member_name", oldName),
     ];
     const results = await Promise.all(updates);
     const relatedError = results.find((result) => result.error)?.error;
@@ -1958,6 +2100,8 @@ async function resetAdminMemberDevice() {
       supabaseClient.from("members").update({ device_id: null }).eq("family_id", familyId).eq("id", member.id),
       supabaseClient.from("push_subscriptions").delete().eq("family_id", familyId).eq("member_id", member.id),
       supabaseClient.from("push_subscriptions").delete().eq("family_id", familyId).eq("member_name", member.name),
+      supabaseClient.from("native_push_tokens").delete().eq("family_id", familyId).eq("member_id", member.id),
+      supabaseClient.from("native_push_tokens").delete().eq("family_id", familyId).eq("member_name", member.name),
     ]);
     const error = results.find((result) => result.error && !isMissingColumnError(result.error))?.error;
     if (error) {
@@ -2104,6 +2248,7 @@ async function deleteCurrentFamily() {
   familyManageStatusText.textContent = "正在刪除家庭...";
   await Promise.all([
     supabaseClient.from("push_subscriptions").delete().eq("family_id", deletingFamilyId),
+    supabaseClient.from("native_push_tokens").delete().eq("family_id", deletingFamilyId),
     supabaseClient.from("tasks").delete().eq("family_id", deletingFamilyId),
     supabaseClient.from("messages").delete().eq("family_id", deletingFamilyId),
     supabaseClient.from("members").delete().eq("family_id", deletingFamilyId),
@@ -2803,10 +2948,17 @@ async function deletePendingMember() {
     const memberQuery = supabaseClient.from("members").delete().eq("family_id", familyId);
     const taskByName = supabaseClient.from("tasks").delete().eq("family_id", familyId).eq("owner", name);
     const pushByName = supabaseClient.from("push_subscriptions").delete().eq("family_id", familyId).eq("member_name", name);
-    const remoteDeletes = [memberId ? memberQuery.eq("id", memberId) : memberQuery.eq("name", name), taskByName, pushByName];
+    const nativePushByName = supabaseClient.from("native_push_tokens").delete().eq("family_id", familyId).eq("member_name", name);
+    const remoteDeletes = [
+      memberId ? memberQuery.eq("id", memberId) : memberQuery.eq("name", name),
+      taskByName,
+      pushByName,
+      nativePushByName,
+    ];
     if (memberId) {
       remoteDeletes.push(supabaseClient.from("tasks").delete().eq("family_id", familyId).eq("owner_member_id", memberId));
       remoteDeletes.push(supabaseClient.from("push_subscriptions").delete().eq("family_id", familyId).eq("member_id", memberId));
+      remoteDeletes.push(supabaseClient.from("native_push_tokens").delete().eq("family_id", familyId).eq("member_id", memberId));
     }
     const results = await Promise.all(remoteDeletes);
     const deleteError = results.find((result) => result.error && !isMissingColumnError(result.error))?.error;
@@ -3386,7 +3538,10 @@ initSoundSetting();
 currentDeviceId();
 applySavedIdentity();
 render();
-initRemote().then(() => render());
+initRemote().then(async () => {
+  await initNativePushIfEnabled();
+  render();
+});
 
 if (!isNativeApp() && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
